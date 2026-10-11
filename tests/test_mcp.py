@@ -1217,8 +1217,9 @@ async def test_search_survives_missing_a_few_words_of_an_agent_sentence(clients)
     from treg.domain.catalog import store as cs
     cat = cs.load()
     # the two logged SearchMiss queries, verbatim
-    # Enrichlayer adds a relevant job-search result ahead of the older ninth-place match.
-    rows, total = cs.search("company job postings hiring open jobs linkedin", cat, 9)
+    # Enrichlayer, then a Crawl4AI recipe, add relevant job-search results ahead of the older
+    # ninth-place match.
+    rows, total = cs.search("company job postings hiring open jobs linkedin", cat, 10)
     assert total > 0
     assert {"apollo.companies.jobs", "apify.linkedin.search.jobs", "enrichlayer.jobs.search",
             "leadmagic.x.jobs-search-v3"} <= {ep["id"] for ep, _ in rows}
@@ -1244,7 +1245,7 @@ async def test_search_survives_missing_a_few_words_of_an_agent_sentence(clients)
     # function words are dropped before the miss allowance is computed, so they cannot crowd out
     # the words that select ("on", "this" are not evidence about any endpoint)
     rows, _ = cs.search("trending repositories on github this week", cat, 3)
-    assert rows and rows[0][0]["id"] == "scrapecreators.x.v1-github-trending-repositories"
+    assert rows and rows[0][0]["capability"] == "github.trending.repositories"
     # single letters can never select: "K&L" must not let k + l decide admission, and the company
     # job ("enrich by name") must lead instead of 67 rows of noise (logged miss, 2026-08-20)
     rows, total = cs.search("K&L Gates company lookup", cat, 8)
