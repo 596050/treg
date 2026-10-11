@@ -137,68 +137,88 @@ adapters:
     miss: "data.email == null"
 
   # ---- instagram.user.profile ---------------------------------------------------------------
+  # Instagram users come in GraphQL (edge_*.count) or private API (*_count) shape; read both.
   tikhub.instagram.user.profile:
     accepts: [[username]]
     in:  {username: queryParams.username}
-    out: {username: "coalesce(data.data.user.username, params.username)", user_id: data.data.user.id,
-          full_name: data.data.user.full_name, followers: data.data.user.edge_followed_by.count,
-          following: data.data.user.edge_follow.count, posts_count: data.data.user.edge_owner_to_timeline_media.count,
+    out: {username: "coalesce(data.data.user.username, params.username)",
+          user_id: "coalesce(data.data.user.id, data.data.user.pk)", full_name: data.data.user.full_name,
+          followers: "coalesce(data.data.user.edge_followed_by.count, data.data.user.follower_count)",
+          following: "coalesce(data.data.user.edge_follow.count, data.data.user.following_count)",
+          posts_count: "coalesce(data.data.user.edge_owner_to_timeline_media.count, data.data.user.media_count)",
           is_verified: data.data.user.is_verified, is_private: data.data.user.is_private, biography: data.data.user.biography}
     miss: "data.data.user == null"
   tikhub.x.instagram-v1-fetch-user-info-by-username-v2:
     accepts: [[username]]
     in:  {username: queryParams.username}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.edge_followed_by.count,
-          following: data.edge_follow.count, posts_count: data.edge_owner_to_timeline_media.count,
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
           is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   tikhub.x.instagram-v1-fetch-user-info-by-username-v3:
     accepts: [[username]]
     in:  {username: queryParams.username}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.edge_followed_by.count,
-          following: data.edge_follow.count, posts_count: data.edge_owner_to_timeline_media.count,
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
           is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   tikhub.x.instagram-v1-fetch-user-info-by-id:
     accepts: [[user_id]]
     in:  {user_id: queryParams.user_id}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.edge_followed_by.count,
-          following: data.edge_follow.count, posts_count: data.edge_owner_to_timeline_media.count,
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
           is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   tikhub.x.instagram-v1-fetch-user-info-by-id-v2:
     accepts: [[user_id]]
     in:  {user_id: queryParams.user_id}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.edge_followed_by.count,
-          following: data.edge_follow.count, posts_count: data.edge_owner_to_timeline_media.count,
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
           is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   tikhub.x.instagram-v3-get-user-profile:
     accepts: [[username]]
     in:  {username: queryParams.username}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.follower_count,
-          following: data.following_count, posts_count: data.media_count, is_verified: data.is_verified,
-          is_private: data.is_private, biography: data.biography}
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
+          is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   justoneapi.instagram.user.profile:
     accepts: [[username]]
     in:  {username: queryParams.username}
-    out: {username: data.username, user_id: data.id, full_name: data.full_name, followers: data.edge_followed_by.count,
-          following: data.edge_follow.count, posts_count: data.edge_owner_to_timeline_media.count,
+    out: {username: data.username, user_id: "coalesce(data.id, data.pk)", full_name: data.full_name,
+          followers: "coalesce(data.edge_followed_by.count, data.follower_count)",
+          following: "coalesce(data.edge_follow.count, data.following_count)",
+          posts_count: "coalesce(data.edge_owner_to_timeline_media.count, data.media_count)",
           is_verified: data.is_verified, is_private: data.is_private, biography: data.biography}
     miss: "data.username == null"
   scrapecreators.instagram.user.profile:
     accepts: [[username]]
     in:  {username: queryParams.handle}
-    out: {username: data.user.username, user_id: data.user.pk, full_name: data.user.full_name,
-          followers: data.user.follower_count, following: data.user.following_count, posts_count: data.user.media_count,
+    out: {username: data.user.username, user_id: "coalesce(data.user.id, data.user.pk)", full_name: data.user.full_name,
+          followers: "coalesce(data.user.edge_followed_by.count, data.user.follower_count)",
+          following: "coalesce(data.user.edge_follow.count, data.user.following_count)",
+          posts_count: "coalesce(data.user.edge_owner_to_timeline_media.count, data.user.media_count)",
           is_verified: data.user.is_verified, is_private: data.user.is_private, biography: data.user.biography}
     miss: "data.user.username == null"
   scrapecreators.x.v1-instagram-basic-profile:
     accepts: [[user_id]]
     in:  {user_id: queryParams.userId}
-    out: {username: username, user_id: pk, full_name: full_name, followers: follower_count, following: following_count,
-          posts_count: media_count, is_verified: is_verified, is_private: is_private, biography: biography}
+    out: {username: username, user_id: "coalesce(id, pk)", full_name: full_name,
+          followers: "coalesce(edge_followed_by.count, follower_count)",
+          following: "coalesce(edge_follow.count, following_count)",
+          posts_count: "coalesce(edge_owner_to_timeline_media.count, media_count)",
+          is_verified: is_verified, is_private: is_private, biography: biography}
     miss: "username == null"
   serpapi.x.instagram-profile:
     accepts: [[username]]
