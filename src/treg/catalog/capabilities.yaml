@@ -124,6 +124,26 @@ platforms:
   yandex: {label: "Yandex Search Results (SERP)", category: "SEO/AEO", summary: "Organic results and rankings from Yandex."}
   duckduckgo: {label: "DuckDuckGo Search Results (SERP)", category: "SEO/AEO", summary: "Organic results from DuckDuckGo."}
   yelp: {label: "Yelp", category: "Reviews & Apps", summary: "Business listings and reviews from Yelp."}
+  # --- Sites served by ready-made scrapers (Crawl4AI recipes) ----------------------------------
+  airbnb: {label: "Airbnb", category: "Reviews & Apps", summary: "Listings, prices and ratings from Airbnb."}
+  booking: {label: "Booking.com", category: "Reviews & Apps", summary: "Hotels, prices and ratings from Booking.com."}
+  glassdoor: {label: "Glassdoor", category: "Reviews & Apps", summary: "Job listings and company reviews from Glassdoor."}
+  zillow: {label: "Zillow", category: "E-commerce", summary: "Homes, prices and listing facts from Zillow."}
+  etsy: {label: "Etsy", category: "E-commerce", summary: "Products and shops from Etsy search."}
+  shopify: {label: "Shopify stores", category: "E-commerce", summary: "The product catalog of any Shopify store."}
+  steam: {label: "Steam", category: "E-commerce", summary: "Games, prices and reviews from the Steam store."}
+  crunchbase: {label: "Crunchbase", category: "Enrichment", summary: "Company profiles from Crunchbase."}
+  indeed: {label: "Indeed", category: "Community", summary: "Job search results from Indeed."}
+  remoteok: {label: "Remote OK", category: "Community", summary: "Remote job listings from Remote OK."}
+  weworkremotely: {label: "We Work Remotely", category: "Community", summary: "Remote job listings from We Work Remotely."}
+  hackernews: {label: "Hacker News", category: "Community", summary: "Stories, search and who-is-hiring posts from Hacker News."}
+  producthunt: {label: "Product Hunt", category: "Community", summary: "Products and daily launches from Product Hunt."}
+  stackoverflow: {label: "Stack Overflow", category: "Developer", summary: "Questions by tag from Stack Overflow."}
+  packages: {label: "Package registries", category: "Developer", summary: "Package facts from npm, PyPI and crates.io."}
+  medium: {label: "Medium", category: "Research & public data", summary: "Posts of a Medium tag, author or publication."}
+  substack: {label: "Substack", category: "Research & public data", summary: "Latest posts of a Substack publication."}
+  wikipedia: {label: "Wikipedia", category: "Research & public data", summary: "Article summaries, sections and search from Wikipedia."}
+  weather: {label: "Weather", category: "Research & public data", summary: "Daily weather forecasts for a place."}
   account: {label: "The provider account itself — usage, quota, balance (not a content platform)", category: "Other"}
 
   # --- Market data: prices & financial markets --------------------------------------------------
