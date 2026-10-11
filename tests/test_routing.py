@@ -245,7 +245,7 @@ def test_search_adapter_does_not_treat_an_answer_without_results_as_a_miss():
     ),
 ])
 async def test_firecrawl_web_routed_calls_serve_and_settle(
-    clients, monkeypatch, firecrawl_platform_on,
+    clients, monkeypatch, firecrawl_platform_on,  # noqa: F811
     parent, child, routed_input, upstream_body, expected_body, expected_cost,
 ):
     seen = []
@@ -1739,7 +1739,7 @@ def test_arena_and_router_read_the_miss_block_the_same_way():
     assert arena.classify(contract, ad, ep, 400, {"error": True, "error_code": "INVALID_DATAPOINTS"})[0] == "error"
 
 
-async def test_company_blind_search_provider_is_dropped_not_billed(clients: AsyncClient, platform_on, monkeypatch):
+async def test_company_blind_search_provider_is_dropped_not_billed(clients: AsyncClient, platform_on, monkeypatch):  # noqa: F811
     """`people.search` declares `scoping: [company_domain]`. A title-only provider asked for
     `{company_domain, title}` answers with the same strangers for every company and bills them as
     a hit, so it leaves the plan instead of ranking last — and still serves a title-only search."""
