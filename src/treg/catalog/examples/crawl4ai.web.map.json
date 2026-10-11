@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "blocked": [],
+    "elapsed_ms": 0,
+    "from_cache": true,
+    "llm_calls": 0,
+    "pages_fetched": 0,
+    "partial": false,
+    "warnings": [
+      "module: site-scan: commoncrawl 25 · links 61 · sitemap 89 · union 94"
+    ]
+  },
+  "recipe": "site-scan",
+  "usage": {
+    "boxes": [
+      "gate"
+    ],
+    "cache": "hit",
+    "engine": "recipe",
+    "lines": [
+      {
+        "about": "the call",
+        "boxes": [
+          "gate"
+        ],
+        "cache": "miss",
+        "call": "recipes",
+        "engine": "gate",
+        "units": 1
+      }
+    ],
+    "remaining_before": {
+      "concurrent": 99,
+      "requests": 166,
+      "search": 3000
+    },
+    "units": 1
+  },
+  "version": 1,
+  "rows": [
+    {
+      "depth": 0,
+      "last_seen": "2026-10-05",
+      "sources": [
+        "sitemap",
+        "links"
+      ],
+      "url": "https://docs.crawl4ai.com/"
+    },
+    {
+      "depth": 2,
+      "last_seen": "2026-10-05",
+      "sources": [
+        "sitemap",
+        "links"
+      ],
+      "url": "https://docs.crawl4ai.com/advanced/advanced-features"
+    }
+  ]
+}
