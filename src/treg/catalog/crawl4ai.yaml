@@ -439,6 +439,93 @@ endpoints:
       result: {path: usage}
       interval: 10
 
+  - id: crawl4ai.web.map
+    capability: web.map
+    platform: web
+    domain: extract
+    scope: any_account
+    method: POST
+    path: /scan
+    body_allowlist: true
+    name: List every URL of a site without crawling it
+    summary: "A site's URLs from the sources that already know them: its sitemaps, the links on its home page and the newest Common Crawl indexes (mode full adds the Wayback Machine). One call, 1 to 3 seconds for most sites. Each row: url, sources, last_seen, depth."
+    input:
+      bodyType: json
+      body:
+        domain: {type: string, required: true, note: "the site's host; a leading https:// is dropped, www and the bare host are one site", example: docs.crawl4ai.com}
+        mode: {type: string, required: false, enum: [fast, full], default: fast, note: "full adds the Wayback Machine, up to 20 s more"}
+        max_urls: {type: integer, required: false, default: 5000, max: 50000}
+        include: {type: string, required: false, note: "keep only matching URLs: a path prefix (/docs) or a glob with * over the path"}
+        include_subdomains: {type: boolean, required: false, default: false}
+    test_request: {body: {domain: docs.crawl4ai.com, max_urls: 5}}
+    cost:
+      type: per_success
+      value: 0.15
+      currency: credit
+      per: 1
+      unit: page
+      source: observed
+      source_url: https://crawl4ai.com/llms.txt
+      checked: '2026-10-11'
+      confidence: verified
+      note: "1 unit for the call plus each page the scan reads (robots.txt, the home page, each sitemap, each index reply) at treg's scrape price; most scans read 4 to 26 pages. A repeat within 7 days is served from cache for the call's unit only. The hold is one page; the x-c4-cost header settles the actual charge (0.500 observed 2026-10-11 for a 5-URL scan)."
+    verified: '2026-10-11'
+    added: '2026-10-11'
+    docs_url: https://crawl4ai.com/llms.txt
+    example_response: examples/crawl4ai.web.map.json
+
+  - id: crawl4ai.web.crawl
+    capability: web.crawl
+    platform: web
+    domain: extract
+    scope: any_account
+    method: POST
+    path: /site
+    body_allowlist: true
+    name: Crawl a whole site as a background job
+    summary: "Crawls one site level by level from a start URL, inside the site, through include and exclude filters, cut at max_pages; runs only as a job. Poll it with crawl4ai.web.scrape.job.status and read the pages (url, level, title, status, links, markdown or html) with crawl4ai.web.scrape.job.results."
+    input:
+      bodyType: json
+      body:
+        url: {type: string, required: true, note: "the start page, an http(s) URL", example: "https://docs.crawl4ai.com/"}
+        depth: {type: integer, required: false, default: 2, max: 5}
+        max_pages: {type: integer, required: false, default: 100, max: 500}
+        include: {type: string, required: false, note: "follow only matching URLs: a path prefix or a glob with *"}
+        exclude: {type: string, required: false, note: "never follow matching URLs, same form as include"}
+        include_subdomains: {type: boolean, required: false, default: false}
+        content: {type: string, required: false, enum: [md, html, none], default: md}
+    test_request: {body: {url: "https://example.com/", depth: 1, max_pages: 3}}
+    cost:
+      type: per_success
+      value: 75.15
+      fallback: {value: 75.15, note: "500 pages at 0.15 credits plus the job's unit, when the finished job reports no usage.cost."}
+      currency: credit
+      unit: call
+      settle: usage
+      usage: {path: usage.cost, unit: credit}
+      source: observed
+      source_url: https://crawl4ai.com/llms.txt
+      checked: '2026-10-11'
+      confidence: verified
+      note: "Each page fetched at treg's scrape price of 0.15 credits; the finished job's usage.cost settles the call (0.150 observed 2026-10-11 for a one-page job). The 75.15-credit hold is the 500-page maximum."
+    verified: '2026-10-11'
+    added: '2026-10-11'
+    docs_url: https://crawl4ai.com/llms.txt
+    example_response: examples/crawl4ai.web.crawl.json
+    async:
+      id_from: job_id
+      poll:
+        endpoint: crawl4ai.web.scrape.job.status
+        param: {in: pathParams, name: id}
+      status:
+        path: status
+        progress: [pending, running, paused]
+        success: [done]
+        failure: []
+        billed_failure: [failed, cancelled]
+      result: {path: usage}
+      interval: 10
+
   - id: crawl4ai.web.scrape.job.status
     async: false
     kind: utility
@@ -943,7 +1030,8 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
+      body:
+        coins: bitcoin,ethereum
     verified: '2026-10-11'
     example_response: examples/crawl4ai.crypto.market.rankings.json
     added: '2026-10-11'
@@ -1157,7 +1245,7 @@ endpoints:
     test_request:
       body:
         post: https://www.facebook.com/NASA/posts/1110592997763013
-    unverified: capture answered 502 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.facebook.user.posts
     async: false
@@ -1859,7 +1947,8 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
+      body:
+        thread: '49922569'
     verified: '2026-10-11'
     example_response: examples/crawl4ai.hackernews.jobs.hiring.json
     added: '2026-10-11'
@@ -2003,7 +2092,7 @@ endpoints:
     test_request:
       body:
         query: rust developer
-    unverified: capture answered 200 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.instagram.hashtag.posts
     async: false
@@ -2048,7 +2137,7 @@ endpoints:
     test_request:
       body:
         tag: space
-    unverified: capture answered 400 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.instagram.post.comments
     async: false
@@ -2098,7 +2187,7 @@ endpoints:
     test_request:
       body:
         post: https://www.instagram.com/p/DcOX3hWFiey/
-    unverified: capture answered 400 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.instagram.search.general
     async: false
@@ -2143,7 +2232,7 @@ endpoints:
     test_request:
       body:
         query: nasa
-    unverified: capture answered 400 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.instagram.user.posts
     async: false
@@ -2201,12 +2290,12 @@ endpoints:
     path: /recipes/instagram-profile
     name: Profile of an Instagram account
     summary: 'One Instagram account as one row: username, full name, biography, followers, following, posts, verified
-      and private flags, category, external link, picture, user id. `username` is the account (@name or an instagram.com
-      URL). Without `session` a public profile is read in about 1 s; biography, following, category and link are then
-      null. `full_profile` true reads every column from a slower source (30 to 80 s, billed per record). With `session`
-      (your `sessionid` and `csrftoken` cookies from the Crawl4AI Session extension, used once, never stored) every
-      column is read as you, about 1 s. Columns: username, full_name, biography, followers, following, posts, is_verified,
-      is_private, category, external_url, profile_pic_url, user_id.'
+      and private, category, external link, picture, user id. `username` is the account (@name or an instagram.com
+      URL). Without `session` a public profile is read in about 2 s; biography, following, category and link are null.
+      `full_profile` true adds biography, following and link from the profile page (3-6 s). A hidden profile comes
+      from a slower source (30-80 s, billed per record). With `session` (your `sessionid` and `csrftoken` cookies,
+      used once, never stored) every column is read as you. Columns: username, full_name, biography, followers, following,
+      posts, is_verified, is_private, category, external_url, profile_pic_url, user_id.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2248,11 +2337,11 @@ endpoints:
     path: /recipes/instagram-reels
     name: Reels of an Instagram account
     summary: 'The latest reels of one Instagram account, newest first, one row per reel: id, code, URL, plays, likes,
-      comments, thumbnail. `username` is the account (@name or an instagram.com URL is fine); `limit` up to 48, 12
-      per page; 2 fetches for 12 reels (3 when the account pins reels), +1 per further 12. Without `session` a public
-      account is read in 2 to 8 s; when Instagram refuses, a slower second source answers (about 100 s, billed per
-      record, plays often empty). With `session` (your `sessionid` and `csrftoken` cookies from the Crawl4AI Session
-      extension, used once, never stored) it is read as you. Columns: id, code, url, plays, likes, comments, thumbnail.'
+      comments, thumbnail. `username` is the account (@name or an instagram.com URL), or `user_id` its numeric id
+      (one lookup fewer); `limit` up to 48, 12 per page. Without `session` a public account is read in 2 to 8 s; when
+      Instagram refuses, a slower second source answers when `username` is given (about 100 s, billed per record,
+      plays often empty). With `session` (your `sessionid` and `csrftoken` cookies, used once, never stored) it is
+      read as you. Columns: id, code, url, plays, likes, comments, thumbnail.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2262,9 +2351,15 @@ endpoints:
           required: false
           note: default 12
           example: 12
+        user_id:
+          type: string
+          required: false
+          note: 'default '
+          example: '528817151'
         username:
           type: string
-          required: true
+          required: false
+          note: 'default '
           example: nasa
     cost:
       type: per_success
@@ -2281,7 +2376,7 @@ endpoints:
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
       body:
-        username: nasa
+        user_id: '528817151'
     verified: '2026-10-11'
     example_response: examples/crawl4ai.instagram.user.reels.json
     added: '2026-10-11'
@@ -2493,8 +2588,8 @@ endpoints:
       (all reactions), comments, reposts, kind (post, repost or article) and one media link. `profile` = the public
       identifier (williamhgates) or the linkedin.com/in/ URL; `limit` up to 50. `session` (your `li_at` and `JSESSIONID`
       cookies, from the Crawl4AI Session extension) is optional, used for this run only and never stored. Without
-      it you get the member''s recent public posts (about 10), without reposts and media. Columns: url, text, posted_at,
-      likes, comments, reposts, kind, media.'
+      it you get the member''s recent public posts and reposts (about 10), without repost counts and media; LinkedIn''s
+      internal id (ACoAA…) needs a session. Columns: url, text, posted_at, likes, comments, reposts, kind, media.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2536,12 +2631,12 @@ endpoints:
     path: /recipes/linkedin-profile
     name: A LinkedIn profile
     summary: 'One LinkedIn profile as one row: name, headline, location, About (500 chars), current company, school,
-      followers, link. `profile` = the public identifier (williamhgates) or the linkedin.com/in/ URL; about 8 s; when
-      LinkedIn refuses the page, a slower second source answers. `session` (optional) = your `li_at` + `JSESSIONID`
-      cookies; adds LinkedIn''s own name, headline, location; 2 units. You supply your own session. Crawl4AI uses
-      it for this run only and does not store it. Your account and the site''s terms are your responsibility. LinkedIn
-      restricts accounts it sees automating. Columns: name, headline, location, about, current_company, school, followers,
-      url.'
+      followers, link. `profile` = the public identifier (williamhgates) or the linkedin.com/in/ URL; an internal
+      id (ACoAA…) needs a session. A refused page falls back to a second source. `session` (optional) = your `li_at`
+      + `JSESSIONID` cookies; adds LinkedIn''s own name, headline, location; 2 units. You supply your own session.
+      Crawl4AI uses it for this run only and does not store it. Your account and the site''s terms are your responsibility.
+      LinkedIn restricts accounts it sees automating. Columns: name, headline, location, about, current_company, school,
+      followers, url.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2621,8 +2716,9 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
-    unverified: capture answered 200 with 0 rows
+      body:
+        author: unclecode
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.meta-ads.library.advertiser
     async: false
@@ -2633,13 +2729,13 @@ endpoints:
     path: /recipes/meta-ads-advertiser
     name: Meta Ad Library ads of one advertiser
     summary: 'The ads one Facebook page runs, as the Meta Ad Library shows them, one row per ad: dates, platforms,
-      text, link, button, media, cards, and spend and impressions for political ads. `page` is the page''s numeric
-      id, its Ad Library URL, or its Facebook name or URL (one more fetch); `country` is ALL or two letters; `active_status`
-      is active or all; `limit` up to 100. A view shows up to 30 ads; below `limit`, the recipe adds the ads split
-      by media type (4 more fetches, not in the Library''s order). No login. 2-8 s; if Facebook refuses the direct
-      fetch, a browser: 20-45 s, up to 12 units. Columns: ad_archive_id, ad_url, page_id, page_name, page_url, page_likes,
-      is_active, start_date, end_date, platforms, display_format, title, body, link_url, link_caption, cta, cta_type,
-      images, videos, cards, same_creative_ads, impressions, spend, currency, paid_for_by.'
+      text, link, button, media, cards, and spend and impressions for political ads. `page` is the page id, its Ad
+      Library or Facebook URL, a company name (Tolteck) or web domain (tolteck.com); a name or domain picks the page
+      in the Library (1-2 more fetches) and the warnings say which, or that none matched (no rows). `country` is ALL
+      or two letters; `active_status` active or all; `limit` up to 100. No login. 2-8 s; if Facebook refuses the direct
+      fetch, a browser: 20-45 s. Columns: ad_archive_id, ad_url, page_id, page_name, page_url, page_likes, is_active,
+      start_date, end_date, platforms, display_format, title, body, link_url, link_caption, cta, cta_type, images,
+      videos, cards, same_creative_ads, impressions, spend, currency, paid_for_by.'
     body_allowlist: true
     input:
       bodyType: json
@@ -3174,7 +3270,8 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
+      body:
+        keyword: senior
     verified: '2026-10-11'
     example_response: examples/crawl4ai.remoteok.search.jobs.json
     added: '2026-10-11'
@@ -3726,10 +3823,10 @@ endpoints:
     name: A TikTok account's latest videos
     summary: 'The latest videos of one public TikTok account, newest first, one row per video: its text and hashtags,
       when it was posted, the author, plays, likes, comments, shares and saves, length, cover and sound. `account`
-      is the @handle or the profile URL; `limit` how many videos (default 20, at most 100). About 1 to 3 s; when TikTok
-      does not answer, a slower second source does (minutes). An unknown or private account gives 0 rows with the
-      reason in the warnings. Columns: post_id, url, description, hashtags, created_at, author, stats, duration_s,
-      cover, music.'
+      is the @handle, the profile URL, or TikTok''s secUid (MS4wLjABAAAA…, one call less); `limit` how many videos
+      (default 20, at most 100). About 1 to 3 s; when TikTok does not answer, a slower second source does for a handle
+      (minutes). An unknown or private account gives 0 rows with the reason in the warnings. Columns: post_id, url,
+      description, hashtags, created_at, author, stats, duration_s, cover, music.'
     body_allowlist: true
     input:
       bodyType: json
@@ -4034,8 +4131,9 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
-    unverified: capture answered 200 with 0 rows
+      body:
+        days: 7
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.web.feed.read
     async: false
@@ -4078,62 +4176,6 @@ endpoints:
         url: https://blog.rust-lang.org/feed.xml
     verified: '2026-10-11'
     example_response: examples/crawl4ai.web.feed.read.json
-    added: '2026-10-11'
-  - id: crawl4ai.web.map
-    async: false
-    capability: web.map
-    platform: web
-    scope: any_account
-    method: POST
-    path: /recipes/site-scan
-    name: Every URL of a site, from the sources that already know it
-    summary: 'Every URL of a site, from the sources that already know it: its sitemaps, its home page links, and the
-      two newest Common Crawl indexes; `mode: full` adds the Wayback Machine (slower). One row per URL with the sources
-      that knew it and when it was last seen. Runs in one to three seconds for most sites. Columns: url, sources,
-      last_seen, depth.'
-    body_allowlist: true
-    input:
-      bodyType: json
-      body:
-        domain:
-          type: string
-          required: true
-          example: docs.crawl4ai.com
-        include:
-          type: string
-          required: false
-          note: 'default '
-          example: /docs
-        include_subdomains:
-          type: boolean
-          required: false
-          note: default False
-        max_urls:
-          type: integer
-          required: false
-          note: default 5000
-        mode:
-          type: string
-          required: false
-          note: default fast
-    cost:
-      type: per_success
-      value: 0.15
-      currency: credit
-      per: 1
-      unit: call
-      source: observed
-      source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
-      confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
-        a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
-    docs_url: https://crawl4ai.com/llms.txt
-    test_request:
-      body:
-        domain: docs.crawl4ai.com
-    verified: '2026-10-11'
-    example_response: examples/crawl4ai.web.map.json
     added: '2026-10-11'
   - id: crawl4ai.weworkremotely.search.jobs
     async: false
@@ -4182,7 +4224,8 @@ endpoints:
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
-      body: {}
+      body:
+        category: programming
     verified: '2026-10-11'
     example_response: examples/crawl4ai.weworkremotely.search.jobs.json
     added: '2026-10-11'
@@ -4321,7 +4364,7 @@ endpoints:
     test_request:
       body:
         tweet: https://x.com/NASA/status/2095890075447964086
-    unverified: capture answered 400 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.x.search.posts
     async: false
@@ -4335,9 +4378,9 @@ endpoints:
       counts, views, language, media, and whether it is a reply, a quote or a repost. `query` is X search text (rust
       lang, from:nasa since:2026-10-01); `mode` latest or top; `limit` up to 100. `session` is your X login (the `auth_token`
       and `ct0` cookies, from the Crawl4AI Session extension), used for this run only, never stored. Without it, only
-      a from:<account> query in mode latest works, by a slower second source, newest first, reposts included; mode
-      top then returns no row and is not billed. Columns: id, url, text, created, author, author_name, likes, reposts,
-      replies, quotes, views, language, media, is_reply, is_quote, is_repost.'
+      a from:<account> query in mode latest works, by a slower second source, newest first; any other query is refused
+      as bad input, not billed. Columns: id, url, text, created, author, author_name, likes, reposts, replies, quotes,
+      views, language, media, is_reply, is_quote, is_repost.'
     body_allowlist: true
     input:
       bodyType: json
@@ -4372,7 +4415,7 @@ endpoints:
     test_request:
       body:
         query: rust lang
-    unverified: capture answered 400 with 0 rows
+    unverified: not run yet
     added: '2026-10-11'
   - id: crawl4ai.x.user.posts
     async: false
@@ -4383,12 +4426,12 @@ endpoints:
     path: /recipes/x-user-tweets
     name: Posts of an X (Twitter) account
     summary: 'The latest posts of one X (Twitter) account, one row per post: id, link, text, likes, reposts, replies,
-      quotes, time, whether it is a repost, and the author. `username` is the handle (nasa or @nasa) or the profile
-      URL; `limit` up to 100, but X gives about 15-20 posts per page and a run reads at most two pages (about 30-40
-      posts). `session` is your own X login (the `auth_token` and `ct0` cookies, from the Crawl4AI Session extension),
-      optional, used for this run only and never stored. Without it the run reads X as a visitor; when X gives nothing,
-      a slower second source answers. Columns: id, url, text, likes, retweets, replies, quotes, created, is_retweet,
-      author.'
+      quotes, time, whether it is a repost, and the author. `username` is the handle (nasa or @nasa), the profile
+      URL or X''s numeric user id (11348282). `limit` up to 100; X gives about 15-20 posts a page and a run reads
+      at most two pages. `session` is your own X login (the `auth_token` and `ct0` cookies, from the Crawl4AI Session
+      extension) (optional), used for this run only, never stored. Without it the run reads X as a visitor; when X
+      shows a visitor nothing, a slower second source answers. Columns: id, url, text, likes, retweets, replies, quotes,
+      created, is_retweet, author.'
     body_allowlist: true
     input:
       bodyType: json
@@ -4590,10 +4633,10 @@ endpoints:
     method: POST
     path: /recipes/youtube-channel-videos
     name: A YouTube channel's latest videos
-    summary: 'The 15 latest videos of a YouTube channel, from its feed: title, link, video id, publish time, views,
-      the first 300 characters of the description and the thumbnail. `channel` is the channel id (UC…), one cheap
-      fetch; a @handle or channel URL first costs a browser fetch of the channel page (10 to 30 seconds) to find the
-      id. Columns: title, url, video_id, published, views, description, thumbnail.'
+    summary: 'The latest videos of a YouTube channel, newest first: title, link, video id, when it was published,
+      views and the thumbnail. `channel` is a channel id (UC…), a handle (@name or name) or a channel URL; `limit`
+      caps the rows (at most 30). A run takes about a second, from YouTube''s own channel list. Columns: title, url,
+      video_id, published, views, description, thumbnail.'
     body_allowlist: true
     input:
       bodyType: json
@@ -4633,10 +4676,10 @@ endpoints:
     method: POST
     path: /recipes/youtube-search
     name: YouTube search results
-    summary: 'The videos on a YouTube results page for a query: title, link, video id, channel, views, when it was
-      published (as YouTube says it), length and a short description. `limit` caps the rows; a page carries about
-      20. The page needs a browser, so a run takes 15 to 30 seconds. Columns: title, url, video_id, channel, views,
-      published, length, description.'
+    summary: 'The videos YouTube finds for a query: title, link, video id, channel, views, when it was published (as
+      YouTube says it, "3 years ago"), length and a short description. `limit` caps the rows (at most 20). A run takes
+      about a second: YouTube''s own search answer, plus one more call when it holds fewer videos than `limit`. Columns:
+      title, url, video_id, channel, views, published, length, description.'
     body_allowlist: true
     input:
       bodyType: json

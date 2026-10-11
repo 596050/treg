@@ -99,7 +99,6 @@ CAPABILITY = {
     "remoteok-jobs": "remoteok.search.jobs",
     "rss-feed": "web.feed.read",
     "shopify-products": "shopify.store.products",
-    "site-scan": "web.map",
     "stackoverflow-questions": "stackoverflow.search.questions",
     "steam-app": "steam.app.detail",
     "substack-posts": "substack.publication.posts",
@@ -231,6 +230,13 @@ def endpoint(r: dict, cap: str, today: str, captured: dict | None) -> dict:
         "docs_url": "https://crawl4ai.com/llms.txt",
     }
     test = {k: v["example"] for k, v in inputs.items() if v.get("required") and v.get("example") is not None}
+    if not test:
+        # A recipe whose inputs are alternatives (a username OR a numeric id) marks none required;
+        # it is tested with the first one that carries an example.
+        alt = [k for k, v in inputs.items()
+               if v.get("example") not in (None, False, "") and k not in ("limit", "sort", "country", "language")]
+        if alt:
+            test = {alt[0]: inputs[alt[0]]["example"]}
     if all(v.get("example") is not None for v in inputs.values() if v.get("required")):
         ep["test_request"] = {"body": test}     # a recipe with no required input runs on {}
     if captured and captured.get("ok"):
