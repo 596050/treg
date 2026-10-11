@@ -349,7 +349,7 @@ endpoints:
     added: '2026-10-09'
     docs_url: https://crawl4ai.com/llms.txt
     example_response: examples/crawl4ai.google.serp.organic.json
-    note: "source names the path that answered. gg is Google fetched directly and carries ai_overview when Google showed one; gs is Crawl4AI's fallback and never carries ai_overview. Calls made in parallel mostly land on gs. For the AI Overview use crawl4ai.google.serp.ai_mode, litescrape.google.serp.ai_overview or dataforseo.x.serp-google-organic-live-advanced with load_async_ai_overview true."
+    note: "source names the path that answered. gg is Google fetched directly and carries ai_overview when Google showed one; gs is Crawl4AI's fallback and never carries ai_overview. Calls made in parallel mostly land on gs. For the AI Overview use cloro.google.serp.organic with include.aioverview true, crawl4ai.google.serp.ai_mode, litescrape.google.serp.ai_overview or dataforseo.x.serp-google-organic-live-advanced with load_async_ai_overview true."
 
   # --- Many URLs ---------------------------------------------------------------------------------
   - id: crawl4ai.web.extract.batch
