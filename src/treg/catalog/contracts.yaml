@@ -387,6 +387,7 @@ contracts:
       count: {type: int}
     miss: "places == []"
     idempotent: true
+    prefer: [crawl4ai]
 
   tiktok.user.videos:
     summary: "List a TikTok user's recent videos by secUid — provider-native video objects in `videos`"

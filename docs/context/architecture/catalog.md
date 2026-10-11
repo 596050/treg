@@ -126,6 +126,7 @@ sources:
   - .github/workflows/catalog-drift.yml
   - scripts/catalog_drift.py
   - scripts/catalog_ingest.py
+  - scripts/catalog_ingest_crawl4ai_recipes.py
   - scripts/catalog_validate.py
   - src/treg/catalog/aliases.yaml
   - src/treg/catalog/fx.yaml
@@ -433,6 +434,7 @@ scripts/
   catalog_verify.py           # live-tests CORE endpoints with a real credential; writes examples/
   catalog_verify_extended.py  # the same for the extended tier, in bulk, under a spend cap
   catalog_ingest.py           # bulk-generates the extended tier from provider specs
+  catalog_ingest_crawl4ai_recipes.py  # writes the marked recipes block of crawl4ai.yaml from GET /recipes
   catalog_cost_provenance.py  # backfills cost units + provenance; re-run after any re-ingest
 src/treg/routers/catalog.py    # open Catalog JSON routes, attached in legacy registration order
 ```

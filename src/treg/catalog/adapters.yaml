@@ -3356,3 +3356,64 @@ adapters:
     test_identity: {url: "https://example.com"}
     out: {pages: data.results, count: "len(data.results)"}
     miss: "coalesce(data.results[0].full_content, data.results[0].highlights, '') == ''"
+
+  # ---- Crawl4AI recipes (POST /recipes/{name}: {rows: [...]}) --------------------------------
+  crawl4ai.google.serp.maps:
+    accepts: [[q]]
+    in: {q: body.query}
+    out: {places: rows, count: "len(rows)"}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.instagram.user.profile:
+    accepts: [[username]]
+    in: {username: body.username}
+    out: {username: "rows[0].username", user_id: "rows[0].user_id", full_name: "rows[0].full_name",
+          followers: "rows[0].followers", following: "rows[0].following", posts_count: "rows[0].posts",
+          is_verified: "rows[0].is_verified", is_private: "rows[0].is_private", biography: "rows[0].biography"}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.instagram.user.posts:
+    accepts: [[username]]
+    in: {username: body.username}
+    out: {posts: rows}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.instagram.user.reels:
+    accepts: [[username], [user_id]]
+    in: {username: body.username, user_id: body.user_id}
+    out: {reels: rows}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.tiktok.user.profile:
+    accepts: [[username]]
+    in: {username: body.username}
+    out: {username: "rows[0].username", user_id: "rows[0].user_id", sec_uid: "rows[0].sec_uid",
+          nickname: "rows[0].nickname", followers: "rows[0].followers", following: "rows[0].following",
+          likes: "rows[0].likes", videos_count: "rows[0].videos", is_verified: "rows[0].verified",
+          biography: "rows[0].bio"}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.tiktok.user.videos:
+    accepts: [[sec_uid]]
+    in: {sec_uid: body.account}
+    out: {videos: rows}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.x.user.profile:
+    accepts: [[username]]
+    in: {username: body.username}
+    out: {username: "rows[0].username", user_id: "rows[0].user_id", name: "rows[0].name",
+          followers: "rows[0].followers", following: "rows[0].following", posts_count: "rows[0].tweets",
+          is_verified: "rows[0].verified", description: "rows[0].bio"}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.facebook.user.posts:
+    accepts: [[url]]
+    in: {url: body.page}
+    out: {posts: rows}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.youtube.channel.profile:
+    accepts: [[channel_id]]
+    in: {channel_id: body.channel}
+    out: {name: "rows[0].title", channel_id: "rows[0].channel_id", handle: "rows[0].handle",
+          description: "rows[0].description", subscribers: "rows[0].subscribers",
+          videos_count: "rows[0].videos", country: "rows[0].country"}
+    miss: "coalesce(rows, []) == []"
+  crawl4ai.youtube.video.comments:
+    accepts: [[video_id]]
+    in: {video_id: body.video}
+    out: {comments: rows}
+    miss: "coalesce(rows, []) == []"

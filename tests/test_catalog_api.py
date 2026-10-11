@@ -348,9 +348,10 @@ async def test_search_finds_the_job_across_providers_best_first(clients: AsyncCl
     rows = body["results"]
     assert body["count"] == len(rows) <= body["total"]
 
-    top = [e["id"] for e in rows[:5]]
+    top = [e["id"] for e in rows[:6]]
     assert top[0] == "treg.tiktok.video.comments", "the routed endpoint for the job comes first"
     assert set(top[1:]) == {
+        "crawl4ai.tiktok.video.comments",
         "anyapi.tiktok.video.comments",
         "justoneapi.tiktok.video.comments",
         "tikhub.tiktok.video.comments",
