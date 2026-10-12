@@ -491,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
     erase.set_defaults(fn=_admin_erase_archive)
     args = ap.parse_args(argv)
     _need_server()
+    from .application.call import keyslots
+    keyslots.check_accounts()  # an unusable TREG_PLATFORM_ACCOUNTS entry refuses to start
     return asyncio.run(_run_command(args))
 
 

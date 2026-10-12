@@ -28,7 +28,7 @@ from ..models import AsyncResourceRecord, AsyncTaskRecord, Hold, Tool
 from ..timeutil import utcnow_naive
 from .call import keyslots
 from .call.resolve import _host_of
-from .call.types import UpstreamRequest
+from .call.types import ResolutionFailed, UpstreamRequest
 
 
 log = logging.getLogger("treg.asynctasks")
@@ -288,7 +288,7 @@ async def _poll(row: AsyncTaskRecord, client: httpx.AsyncClient) -> tuple[int, b
     # 24-hour deadline. Path-parameter polls never showed it. Live 2026-09-02.
     # The task exists only on the account that accepted it (`keyslots`); a retired account
     # raises here and the row fails like any other unreachable poll.
-    account = keyslots.choose(row.provider, row.endpoint_id, owners=(row.key_slot,))
+    account = keyslots.pinned(row.provider, owners=(row.key_slot,))
     tool = Tool(org_id=row.org_id, name=row.endpoint_id, owner="treg-worker",
                 base_url=provider.base_url, host=_host_of(provider.base_url),
                 bindings=oauth_providers.platform_bindings(provider, account))
@@ -325,7 +325,7 @@ async def _finish(call_id: str, outcome: str, document: object | None, now, *,
         # finished answer seen while the row is still pending is a delivered answer and settles.
         if outcome in ("success", "failure", "billed_failure") and asynctasks.expired(row.created_at, now):
             outcome = "timed_out"
-        if outcome in ("success", "failure", "billed_failure", "timed_out") \
+        if outcome in ("success", "failure", "billed_failure", "timed_out", "account_retired") \
                 and await db.get(Hold, call_id) is None:
             # The request path already closed this hold (cancelled at the commit boundary, or
             # reaped): there is no money left to move, and a row "settled" at zero would lie.
@@ -388,6 +388,19 @@ async def _finish(call_id: str, outcome: str, document: object | None, now, *,
                       "released %d micro-USD to the team, platform absorbs the upstream charge - "
                       "check whether the provider changed its status field",
                       row.call_id, row.provider, row.endpoint_id, row.reserved_micro)
+        elif outcome == "account_retired":
+            # The treg account that accepted the task is no longer configured, so no poll can ever
+            # observe it. Waiting out the deadline would only keep the team's balance held: release
+            # in full now, the platform absorbs any upstream charge, and a human reconciles.
+            await ledger.release_in_transaction(db, row.call_id, reason="async_task_account_retired",
+                                                meta={"provider": row.provider, "async_task": True,
+                                                      "reconcile_review": True})
+            row.settled_micro = 0
+            row.status = asynctasks.RELEASED
+            row.error = f"treg account {row.key_slot!r} is no longer configured; hold released, platform absorbs"
+            log.error("ASYNC TASK ON A RETIRED ACCOUNT: call %s on %s/%s released %d micro-USD to the "
+                      "team; the task cannot be polled again", row.call_id, row.provider,
+                      row.key_slot, row.reserved_micro)
         else:
             row.consecutive_failures = row.consecutive_failures + 1 if outcome == "poll_error" else 0
             due = (asynctasks.next_failure_check(now, row.consecutive_failures)
@@ -486,6 +499,9 @@ async def _process(call_id: str, client: httpx.AsyncClient, attempt: int) -> str
     except money_admission.AdmissionRefused:
         raise
     except Exception as exc:  # noqa: BLE001 - one row's failure must never abort the tick
+        if isinstance(exc, ResolutionFailed) and exc.kind == "platform_account_retired":
+            return await _finish_balance(snapshot.org_id, "release", call_id, "account_retired",
+                                         None, utcnow_naive(), expected_attempt=attempt)
         # relay() raises GatewayFailed (an unset platform key, an SSRF refusal), httpx raises its
         # own, JSON raises ValueError: all mean "no evidence this tick". Back off and say why; the
         # deadline still ends it, and the whole tick keeps serving the other rows.

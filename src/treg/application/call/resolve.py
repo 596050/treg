@@ -353,7 +353,8 @@ class MarketplaceCall:
     # Admitted through an active capacity lock as its probe (domain.capacity.marks): a 2xx clears
     # exactly that lock.
     probe_lock_id: str | None = None
-    # Which of treg's accounts for the provider serves this platform call (`keyslots`).
+    # Which of treg's accounts for the provider serves this platform call (`keyslots`); None until
+    # the call path picks one when resolution left the choice open.
     key_slot: str | None = None
     # A routed child: settle into this list instead of the ledger (CallContext.deferred_settles).
     deferred: list | None = None
@@ -1845,7 +1846,7 @@ async def _enforce_platform_async_ownership(
             if endpoint_id != ep["id"] or frozen_param != current_param:
                 continue
             if kind == "poll" and row.task_id == value:
-                return row.call_id, (row.key_slot,)
+                return row.call_id, (row.key_slot, *resource_slot)
             if kind == "fetch":
                 result = (row.descriptor or {}).get("result") or {}
                 same_as_task = (
@@ -1854,7 +1855,7 @@ async def _enforce_platform_async_ownership(
                     == (row.descriptor or {}).get("id_from")
                 )
                 if row.result_id == value or same_as_task:
-                    return None, (row.key_slot,)
+                    return None, (row.key_slot, *resource_slot)
     if resource_slot:
         return None, resource_slot
     raise _async_resource_denied(caller)
@@ -2269,8 +2270,9 @@ async def _resolve_marketplace_call(
             raise _provider_capacity_unavailable(
                 ep, service, capacity_view.exhausted_until(service, ep["id"]), probing=True)
     if cost is not None:
-        key_slot = keyslots.choose(
-            service, ep["id"], owners=async_owners + resource_owners,
+        # None: any of treg's accounts may serve it; the call path picks one before the relay.
+        key_slot = keyslots.pinned(
+            service, owners=async_owners + resource_owners,
             idempotency_key=_key_affinity(caller, request_headers))
         virtual = Tool(
             org_id=caller.org_id, name=ep["id"], owner=caller.email,

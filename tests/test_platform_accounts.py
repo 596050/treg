@@ -72,9 +72,12 @@ def test_a_malformed_accounts_value_refuses_to_start(raw):
     ({"tomba": {"b": {"platform_key_tomba": "T2", "platform_key_tomba_secret": "S2"}}}, None),
     ({"tomba": {"b": {"platform_key_tomba": "T2"}}}, "platform_key_tomba_secret"),
     ({"nosuchprovider": {"b": {"platform_key_nosuchprovider": "Y"}}}, "no platform key"),
+    ({"hunter": {"b": {"platform_key_hunter": "H2"}}}, "TREG_PLATFORM_KEY_HUNTER is not set"),
 ])
 def test_an_account_the_call_path_cannot_use_refuses_to_start(monkeypatch, accounts, refused):
     monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(accounts))
+    monkeypatch.setenv("TREG_PLATFORM_KEY_TOMBA", "T1")
+    monkeypatch.setenv("TREG_PLATFORM_KEY_TOMBA_SECRET", "S1")
     get_settings.cache_clear()
     try:
         if refused is None:
@@ -89,32 +92,33 @@ def test_an_account_the_call_path_cannot_use_refuses_to_start(monkeypatch, accou
 # ---- choosing an account ------------------------------------------------------------------------
 
 def test_an_owner_pins_its_account_and_a_retired_one_is_refused(two_tikhub_accounts):
-    def choose(**kw):
-        return keyslots.choose("tikhub", EP, **kw)
+    def pinned(**kw):
+        return keyslots.pinned("tikhub", **kw)
 
-    assert choose(owners=("b",)) == "b"
-    assert choose(owners=(None,)) == PRIMARY_SLOT, "a row from before pools is the primary's"
+    assert pinned(owners=("b",)) == "b"
+    assert pinned(owners=(None,)) == PRIMARY_SLOT, "a row from before pools is the primary's"
+    assert pinned() is None, "no owner, no key: any account, picked before the relay"
     with pytest.raises(ResolutionFailed) as gone:
-        choose(owners=("c",))
+        pinned(owners=("c",))
     assert gone.value.status_code == 410 and "nothing was charged" in str(gone.value.detail)
-    with pytest.raises(ResolutionFailed):
-        choose(owners=("b", None))
+    with pytest.raises(ResolutionFailed) as split:
+        pinned(owners=("b", None))
+    assert split.value.kind == "platform_account_split" and split.value.status_code == 409
 
 
 def test_an_idempotency_key_always_lands_on_the_same_account(two_tikhub_accounts):
-    picks = {keyslots.choose("tikhub", EP, idempotency_key=f"1\x1fk{i}") for i in range(40)}
+    picks = {keyslots.pinned("tikhub", idempotency_key=f"1\x1fk{i}") for i in range(40)}
     assert picks == {PRIMARY_SLOT, "b"}, "keys spread across accounts"
     for i in range(5):
         key = f"1\x1fretry-{i}"
-        assert len({keyslots.choose("tikhub", EP, idempotency_key=key) for _ in range(5)}) == 1
+        assert len({keyslots.pinned("tikhub", idempotency_key=key) for _ in range(5)}) == 1
 
 
 def test_the_primary_account_keeps_the_providers_own_binding_and_bucket(two_tikhub_accounts):
-    from treg.domain.capacity import view as view_mod
     provider = oauth_providers.get("tikhub")
     assert all("account" not in b for b in oauth_providers.platform_bindings(provider, PRIMARY_SLOT))
-    assert view_mod.view.rate_bucket("tikhub", EP, PRIMARY_SLOT)[0] == "tikhub"
-    assert view_mod.view.rate_bucket("tikhub", EP, "b")[0] == "tikhub#b"
+    assert keyslots.rate_bucket("tikhub", EP, PRIMARY_SLOT)[0] == "tikhub"
+    assert keyslots.rate_bucket("tikhub", EP, "b")[0] == "tikhub#b"
 
 
 async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, two_tikhub_accounts,
@@ -136,10 +140,36 @@ async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, t
 
 
 async def test_a_busy_account_hands_the_next_call_to_an_idle_one(two_tikhub_accounts):
-    from treg.domain.capacity import view as view_mod
-    await limiter.acquire(*view_mod.view.rate_bucket("tikhub", EP, PRIMARY_SLOT))
+    await limiter.acquire(*keyslots.rate_bucket("tikhub", EP, PRIMARY_SLOT))
     for _ in range(4):  # the primary's token is spent; "b" has one
-        assert keyslots.choose("tikhub", EP) == "b"
+        assert keyslots.least_loaded("tikhub", EP) == "b"
+
+
+async def test_a_burst_arriving_together_spreads_over_the_accounts(
+    clients: AsyncClient, two_tikhub_accounts, monkeypatch,
+):
+    """Every call of a burst resolves before any reaches the relay; the account is picked where its
+    token is taken, so the burst does not all read the same idle account."""
+    import asyncio
+    seen: list[str] = []
+
+    def upstream(request):
+        seen.append(request.headers["authorization"])
+        return _dropleads_response(200, {"comments": []})
+
+    from test_capacity_smoothing import _publish_rate
+    await _publish_rate("tikhub", 4, 1.0)
+    async with AsyncClient(transport=httpx.MockTransport(upstream)) as vendor:
+        monkeypatch.setattr(A.app.state, "http", vendor)
+        assert (await clients.get(f"/call/{EP}?aweme_id=warm")).status_code == 200
+        seen.clear()
+        limiter.reset()
+        # The primary is busy and "b" idle as the burst resolves: read at resolution, every call
+        # would pick "b" and queue there while the primary sat unused.
+        await limiter.acquire(*keyslots.rate_bucket("tikhub", EP, PRIMARY_SLOT))
+        rs = await asyncio.gather(*(clients.get(f"/call/{EP}?aweme_id={i}") for i in range(6)))
+    assert [r.status_code for r in rs] == [200] * 6
+    assert seen.count("Bearer PLATFORM-TIKHUB-KEY") >= 2 and seen.count(f"Bearer {TIKHUB_B}") >= 2
 
 
 # ---- objects stay on their account --------------------------------------------------------------

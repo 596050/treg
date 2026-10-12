@@ -15,6 +15,8 @@ from sqlalchemy import event
 from sqlmodel import select
 
 from treg.application import asynctasks as task_app
+
+_real_poll = task_app._poll
 from treg.application.call import service as call_service
 from treg.application.call.resolve import MarketplaceCall
 from treg.application.call.types import UpstreamResponse
@@ -145,6 +147,25 @@ async def test_worker_errors_grow_backoff_and_progress_resets_it(
         row = await db.get(AsyncTaskRecord, call_id)
         assert row.consecutive_failures == 0
         assert await db.get(Hold, call_id) is not None
+
+
+async def test_a_task_on_a_retired_account_releases_its_hold_at_once(
+    clients: AsyncClient, monkeypatch, replicate_platform,
+):
+    """The account that accepted it is gone: no poll can ever observe it, so the hold goes back
+    now instead of after every tick until the deadline."""
+    call_id = await _due_submission(clients, monkeypatch, {})
+    monkeypatch.setattr(task_app, "_poll", _real_poll)
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        row.key_slot = "retired"
+        await db.commit()
+    await task_app.settle_due()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.RELEASED and row.settled_micro == 0
+        assert "no longer configured" in row.error
+        assert await db.get(Hold, call_id) is None
 
 
 async def test_queued_worker_rows_are_not_claimed_before_a_poll_slot(

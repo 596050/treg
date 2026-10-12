@@ -424,24 +424,29 @@ than reporting a charge that has not happened yet.
 accounts: `{"contactout": {"b": {"platform_key_contactout": "..."}}}`. The deployment's own
 `platform_key_<provider>` is the account labelled `primary`, and every reader outside the call path
 (balance collectors, archive refresh, overflow verification) keeps using only it. An account names
-every credential that differs per account. `keyslots.check_accounts` refuses to start on an account
-the call path cannot use: a provider without a pasted platform key, or an account that omits its
-provider's paired setting (Tomba's secret, Adyntel's account email). A label,
+every credential that differs per account. `keyslots.check_accounts` refuses to start the API or
+`treg-worker` on an account the call path cannot use: one behind a provider whose primary key is
+unset (the primary is the serving switch), a provider without a pasted platform key, or an account
+that omits its provider's paired setting (Tomba's secret, Adyntel's account email). A label,
 never a credential, is what rows, buckets and telemetry (`tool_called.key_slot`) name, so reordering
 the accounts or regenerating one's key changes nothing.
 
-`application/call/keyslots.py` picks the account during resolution, after ownership is checked:
+`application/call/keyslots.py` picks the account:
 
 1. A call acting on a task, result or managed resource uses the account that created it.
    `AsyncTaskRecord`, `AsyncResourceRecord` and `ProviderResource` carry `key_slot`; NULL is a row
    from before accounts existed and means `primary`. A row whose account is no longer configured is
-   refused with 410 `platform_account_retired` before reserve, and the async worker's poll fails
-   and backs off like any unreachable poll until the deadline releases the hold.
+   refused with 410 `platform_account_retired` before reserve; the async worker releases such a
+   task's hold at once (the platform absorbs any upstream charge, flagged for reconciliation). A
+   call whose objects live on different accounts is refused with 409 `platform_account_split`.
 2. A call carrying `Idempotency-Key` uses the account the org-scoped key hashes to, so a retry that
    reaches the provider again lands where the provider can recognise it. Adding or removing an
    account can move a key. The idempotency claim is no place to remember the account: a failed
    call deletes its claim, and that is exactly the retry that reaches the provider.
-3. Otherwise the account whose smoothing bucket would wait least; ties rotate.
+3. Otherwise the account whose smoothing bucket would wait least; ties rotate. Rules 1 and 2 run
+   during resolution (`pinned`); this one runs right before the relay (`least_loaded`), and the
+   chosen bucket's token is taken with no await between, so a burst that resolved together still
+   spreads over the accounts instead of all reading the same idle one.
 
 A call on any account but the primary carries `account: <provider>/<label>` on its platform
 binding, and the relay injects that account's values or fails `injection_failed` when the account

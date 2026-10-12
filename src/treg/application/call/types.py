@@ -64,6 +64,7 @@ _BLAME_BY_KIND: dict[str, Blame] = {
     "route_not_found": "caller",       # the requested page or record does not exist at its source
     "injection_failed": "treg",
     "platform_account_retired": "treg",
+    "platform_account_split": "treg",
     "ssrf_refused": "treg",
     "connect_failed": "upstream",
     "read_timeout": "upstream",

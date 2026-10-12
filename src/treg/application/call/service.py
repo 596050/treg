@@ -33,6 +33,7 @@ from ...infra.upstream.limiter import limiter as provider_limiter
 from ...infra.upstream.relay import identify_as_treg, relay, scope_shared_idempotency_key
 from .. import asynctasks as async_task_app
 from ...domain import asynctasks as asynctasks_rules
+from . import keyslots
 from .authorize import authorize_call, enforce_public_demo_limit
 from .evidence import (
     _ERROR_BODY_SLICE,
@@ -1235,7 +1236,13 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 # would exceed the provider's published rate waits briefly (≤ 2 s, in-process, no DB —
                 # the DB phase ended above) instead of being relayed into a 429 nobody can fix. Beyond
                 # the cap it proceeds as before; nothing is ever refused here.
-                rl = capacity_view.rate_bucket(mk.provider, mk.endpoint_id, mk.key_slot)
+                # The account, when resolution left it open, is picked here and its token taken
+                # below with no await between: a burst arriving together spreads over the accounts.
+                if mk.key_slot is None:
+                    mk.key_slot = keyslots.least_loaded(mk.provider, mk.endpoint_id)
+                    mk.tool.bindings = oauth_providers.platform_bindings(
+                        oauth_providers.get(mk.provider), mk.key_slot)
+                rl = keyslots.rate_bucket(mk.provider, mk.endpoint_id, mk.key_slot)
                 if rl is not None:
                     waited = await provider_limiter.acquire(*rl)
                     if waited:
