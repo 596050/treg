@@ -498,15 +498,25 @@ async def _process(call_id: str, client: httpx.AsyncClient, attempt: int) -> str
         return await _finish(call_id, outcome, document, utcnow_naive(), expected_attempt=attempt)
     except money_admission.AdmissionRefused:
         raise
+    except ResolutionFailed as exc:
+        if exc.kind != "platform_account_retired":
+            log.warning("async poll failed for call %s: %s: %s", call_id, type(exc).__name__, exc)
+            return await _finish(call_id, "poll_error", None, utcnow_naive(), expected_attempt=attempt)
+        # Retired: released below, outside the handler, so a failing release is handled alone.
     except Exception as exc:  # noqa: BLE001 - one row's failure must never abort the tick
-        if isinstance(exc, ResolutionFailed) and exc.kind == "platform_account_retired":
-            return await _finish_balance(snapshot.org_id, "release", call_id, "account_retired",
-                                         None, utcnow_naive(), expected_attempt=attempt)
         # relay() raises GatewayFailed (an unset platform key, an SSRF refusal), httpx raises its
         # own, JSON raises ValueError: all mean "no evidence this tick". Back off and say why; the
         # deadline still ends it, and the whole tick keeps serving the other rows.
         log.warning("async poll failed for call %s: %s: %s", call_id, type(exc).__name__, exc)
         return await _finish(call_id, "poll_error", None, utcnow_naive(), expected_attempt=attempt)
+    try:
+        return await _finish_balance(snapshot.org_id, "release", call_id, "account_retired",
+                                     None, utcnow_naive(), expected_attempt=attempt)
+    except money_admission.AdmissionRefused:
+        raise
+    except Exception:  # noqa: BLE001 - the row stays pending; the next tick or the deadline ends it
+        log.exception("could not release async task %s on a retired account", call_id)
+        return "backed_off"
 
 
 async def settle_due(*, limit: int = DEFAULT_LIMIT, client: httpx.AsyncClient | None = None) -> TickResult:

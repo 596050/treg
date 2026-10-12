@@ -181,6 +181,33 @@ async def test_a_task_on_a_retired_account_releases_its_hold_at_once(
         assert await db.get(Hold, call_id) is None
 
 
+async def test_a_failed_release_on_a_retired_account_leaves_the_tick_running(
+    clients: AsyncClient, monkeypatch, replicate_platform,
+):
+    """The release is outside the poll's error handler: when it fails, the row backs off with its
+    hold and `_process` answers like any other row, without raising."""
+    call_id = await _due_submission(clients, monkeypatch, {})
+    monkeypatch.setattr(task_app, "_poll", _real_poll)
+    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(
+        {"replicate": {"b": {"platform_key_replicate": "test-platform-token-b"}}}))
+    get_settings.cache_clear()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        row.key_slot = "retired"
+        await db.commit()
+
+    async def failing_release(*args, **kwargs):
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(task_app, "_finish_balance", failing_release)
+    async with session_maker() as db:
+        attempt = (await db.get(AsyncTaskRecord, call_id)).attempts
+    assert await task_app._process(call_id, None, attempt) == "backed_off"
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.PENDING and await db.get(Hold, call_id) is not None
+
+
 async def test_queued_worker_rows_are_not_claimed_before_a_poll_slot(
     clients: AsyncClient, monkeypatch, replicate_platform,
 ):

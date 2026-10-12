@@ -61,6 +61,8 @@ def _parse_platform_pools(raw: str) -> dict[str, dict[str, dict[str, str]]]:
         raise ValueError("platform_accounts must be a JSON object") from None
     if not isinstance(parsed, dict):
         raise ValueError("platform_accounts must be a JSON object")
+    if len({provider.lower() for provider in parsed}) != len(parsed):
+        raise ValueError("platform_accounts names a provider twice (provider names are case-insensitive)")
     pools: dict[str, dict[str, dict[str, str]]] = {}
     for provider, accounts in parsed.items():
         primary = platform_setting_name(provider)

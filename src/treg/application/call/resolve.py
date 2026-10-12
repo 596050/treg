@@ -18,7 +18,7 @@ from sqlmodel import select
 
 from ... import oauth, oauth_providers
 from ... import sandbox as demo_sandbox
-from ...config import get_settings, platform_setting_name
+from ...config import get_settings
 from ...domain.capacity import marks as capacity_marks
 from ...domain.capacity.routes_view import view as overflow_routes_view
 from ...domain.capacity.view import view as capacity_view
