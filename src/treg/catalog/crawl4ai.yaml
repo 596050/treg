@@ -608,15 +608,15 @@ endpoints:
           example: true
     cost:
       type: per_success
-      value: 0.15
+      value: 3.2
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 3.2 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -654,7 +654,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -691,15 +691,15 @@ endpoints:
           example: B0F5HSNDXF
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -741,7 +741,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -786,15 +786,15 @@ endpoints:
           note: default 1
     cost:
       type: per_success
-      value: 0.15
+      value: 13.5
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 13.5 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -840,7 +840,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -892,7 +892,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -933,7 +933,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -975,7 +975,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1018,15 +1018,15 @@ endpoints:
           note: default 20
     cost:
       type: per_success
-      value: 0.15
+      value: 0.25
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.25 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1058,15 +1058,15 @@ endpoints:
           example: '204690060416'
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1115,7 +1115,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1149,15 +1149,15 @@ endpoints:
           example: '601379014832379'
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1176,9 +1176,10 @@ endpoints:
     name: One Facebook Marketplace item
     summary: 'One Facebook Marketplace listing as one row: title, price and the price before a reduction, currency,
       condition, category, description, location, the seller''s id, when it was listed, whether it has sold, and photos.
-      `item` is the listing''s URL or its id (the number after /marketplace/item/). About 20 s. Columns: item_id,
-      url, title, price, price_before, currency, condition, categories, description, location, seller_id, listed_at,
-      is_sold, photos.'
+      `item` is the listing''s URL or its id (the number after /marketplace/item/). About 5 s from the public page
+      (no seller id there); about 20 s from the second source when Facebook refuses the page. Columns: item_id, url,
+      title, price, price_before, currency, condition, categories, description, location, seller_id, listed_at, is_sold,
+      photos.'
     body_allowlist: true
     input:
       bodyType: json
@@ -1189,15 +1190,15 @@ endpoints:
           example: '886233566263264'
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1231,15 +1232,15 @@ endpoints:
           example: https://www.facebook.com/NASA/posts/1110592997763013
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1276,15 +1277,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1319,15 +1320,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1386,7 +1387,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1458,7 +1459,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1496,15 +1497,15 @@ endpoints:
           example: unclecode/crawl4ai
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1537,15 +1538,15 @@ endpoints:
           note: default daily
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -1594,7 +1595,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1645,7 +1646,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1698,7 +1699,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1747,7 +1748,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1798,7 +1799,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1848,7 +1849,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1888,7 +1889,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1941,7 +1942,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -1992,7 +1993,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2029,7 +2030,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2084,7 +2085,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2123,15 +2124,15 @@ endpoints:
           example: space
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2173,15 +2174,15 @@ endpoints:
           example: popular
     cost:
       type: per_success
-      value: 0.15
+      value: 0.7
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.7 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2218,15 +2219,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2264,15 +2265,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2311,15 +2312,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2363,15 +2364,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2402,15 +2403,15 @@ endpoints:
           example: microsoft
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2448,15 +2449,15 @@ endpoints:
           example: https://www.linkedin.com/feed/update/urn:li:activity:7502080571335155713/
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2509,15 +2510,15 @@ endpoints:
           example: 0
     cost:
       type: per_success
-      value: 0.15
+      value: 0.45
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.45 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2537,8 +2538,8 @@ endpoints:
     summary: 'The public LinkedIn members with a given first and last name, one row per member: name, profile URL,
       headline, location, and the company and school summary LinkedIn shows ("Microsoft, +4 more"). For finding the
       right profile before you read it with linkedin-profile. `first_name` and `last_name` are the name; `limit` caps
-      the members (each one is a billed record). About 1 minute. Columns: name, profile_url, profile_id, headline,
-      location, experience, education, avatar.'
+      the members. About 2 s from our own search; about 1 minute when only the second source finds the name. Columns:
+      name, profile_url, profile_id, headline, location, experience, education, avatar.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2558,15 +2559,15 @@ endpoints:
           example: 10
     cost:
       type: per_success
-      value: 0.15
+      value: 3.6
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 3.6 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2605,15 +2606,15 @@ endpoints:
           example: williamhgates
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2647,15 +2648,15 @@ endpoints:
           example: williamhgates
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2710,7 +2711,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2729,11 +2730,11 @@ endpoints:
     path: /recipes/meta-ads-advertiser
     name: Meta Ad Library ads of one advertiser
     summary: 'The ads one Facebook page runs, as the Meta Ad Library shows them, one row per ad: dates, platforms,
-      text, link, button, media, cards, and spend and impressions for political ads. `page` is the page id, its Ad
-      Library or Facebook URL, a company name (Tolteck) or web domain (tolteck.com); a name or domain picks the page
-      in the Library (1-2 more fetches) and the warnings say which, or that none matched (no rows). `country` is ALL
-      or two letters; `active_status` active or all; `limit` up to 100. No login. 2-8 s; if Facebook refuses the direct
-      fetch, a browser: 20-45 s. Columns: ad_archive_id, ad_url, page_id, page_name, page_url, page_likes, is_active,
+      text, link, button, media, cards; spend and reach for political ads. `page` is the page id, its Ad Library or
+      Facebook URL, a company name (Tolteck) or web domain (tolteck.com); a name or domain picks the page (1-2 more
+      fetches); the warnings say which, or that none matched. `country` (ALL or two letters) and `active_status` (active
+      or all), left empty, take an Ad Library URL''s values, else ALL and active. No login. 2-8 s; refused: a residential
+      exit, then a browser (20-45 s). Columns: ad_archive_id, ad_url, page_id, page_name, page_url, page_likes, is_active,
       start_date, end_date, platforms, display_format, title, body, link_url, link_caption, cta, cta_type, images,
       videos, cards, same_creative_ads, impressions, spend, currency, paid_for_by.'
     body_allowlist: true
@@ -2743,12 +2744,12 @@ endpoints:
         active_status:
           type: string
           required: false
-          note: default active
+          note: 'default '
           example: active
         country:
           type: string
           required: false
-          note: default ALL
+          note: 'default '
           example: US
         limit:
           type: integer
@@ -2761,15 +2762,15 @@ endpoints:
           example: '15087023444'
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2790,10 +2791,10 @@ endpoints:
       ad: advertiser page, dates, platforms, text, link, button, media, cards, and spend and impressions for political
       ads. `query` is the search text; `country` is ALL or two letters (US, GB, DE); `active_status` is active or
       all; `limit` up to 100. A view shows up to 30 ads; below `limit`, the recipe adds the search split by media
-      type (4 more fetches, not in the Library''s order). No login. 2-8 s; if Facebook refuses the direct fetch, a
-      browser: 20-45 s, up to 10 units. Columns: ad_archive_id, ad_url, page_id, page_name, page_url, page_likes,
-      is_active, start_date, end_date, platforms, display_format, title, body, link_url, link_caption, cta, cta_type,
-      images, videos, cards, same_creative_ads, impressions, spend, currency, paid_for_by.'
+      type (4 more fetches, not in the Library''s order). No login. 2-8 s; if Facebook refuses our address, a residential
+      exit (3-10 s), then a browser: 20-45 s, up to 10 units. Columns: ad_archive_id, ad_url, page_id, page_name,
+      page_url, page_likes, is_active, start_date, end_date, platforms, display_format, title, body, link_url, link_caption,
+      cta, cta_type, images, videos, cards, same_creative_ads, impressions, spend, currency, paid_for_by.'
     body_allowlist: true
     input:
       bodyType: json
@@ -2819,15 +2820,15 @@ endpoints:
           example: running shoes
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -2868,7 +2869,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2906,7 +2907,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2943,7 +2944,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -2983,7 +2984,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3028,15 +3029,15 @@ endpoints:
           example: https://www.reddit.com/r/rust/comments/1w38wm2/hey_rustaceans_got_a_question_ask_here_362026/
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3090,15 +3091,15 @@ endpoints:
           example: all
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3147,15 +3148,15 @@ endpoints:
           example: day
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3208,15 +3209,15 @@ endpoints:
           example: spez
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3264,7 +3265,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3316,7 +3317,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3368,7 +3369,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3415,7 +3416,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3459,7 +3460,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3502,7 +3503,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3544,7 +3545,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3587,7 +3588,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -3623,15 +3624,15 @@ endpoints:
           note: default 20
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3669,15 +3670,15 @@ endpoints:
           example: zuck
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3709,15 +3710,15 @@ endpoints:
           example: '1732509604120924773'
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3734,12 +3735,13 @@ endpoints:
     method: POST
     path: /recipes/tiktok-search
     name: TikTok videos for a search
-    summary: 'The videos TikTok returns for a keyword search, one row per video, in the order TikTok ranks them: its
-      text and hashtags, when it was posted, the author, plays, likes, comments, shares and saves, length, cover and
-      sound. `query` is the search words; `limit` how many videos (default 20, at most 100). Up to 20 reads one results
-      page through a second source (10 to 16 videos, 15 to 40 s); above 20 a slower source adds the rest (2 to 5 minutes;
-      run it as a job); a video both sources return costs one more record. Columns: post_id, url, description, hashtags,
-      created_at, author, stats, duration_s, cover, music.'
+    summary: 'TikTok videos for a keyword search, one row per video: its text and hashtags, when it was posted, the
+      author, plays, likes, comments, shares and saves, length, cover and sound. `query` is the search words; `limit`
+      how many videos (default 20, at most 100). Our own search finds the videos on tiktok.com, in its order, and
+      reads each one: about 2 to 5 s for 20; a video TikTok does not show in time keeps the search''s text and has
+      no counts. When it finds fewer than half of `limit`, a second source adds the rest (15 to 40 s; above 20 videos
+      a slower one, 2 to 5 minutes: run it as a job). Columns: post_id, url, description, hashtags, created_at, author,
+      stats, duration_s, cover, music.'
     body_allowlist: true
     input:
       bodyType: json
@@ -3755,15 +3757,15 @@ endpoints:
           example: cooking
     cost:
       type: per_success
-      value: 0.15
+      value: 0.5
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.5 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3796,15 +3798,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3842,15 +3844,15 @@ endpoints:
           example: 20
     cost:
       type: per_success
-      value: 0.15
+      value: 0.5
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.5 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3887,15 +3889,15 @@ endpoints:
           example: '7654036719242726670'
     cost:
       type: per_success
-      value: 0.15
+      value: 0.5
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.5 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3927,15 +3929,15 @@ endpoints:
           example: '7654036719242726670'
     cost:
       type: per_success
-      value: 0.15
+      value: 0.5
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.5 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -3980,15 +3982,15 @@ endpoints:
           note: default 1
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4022,15 +4024,15 @@ endpoints:
           example: '12164618'
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4068,7 +4070,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4125,7 +4127,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4166,7 +4168,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4218,7 +4220,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4261,7 +4263,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4310,7 +4312,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4350,15 +4352,15 @@ endpoints:
           example: https://x.com/NASA/status/2095890075447964086
     cost:
       type: per_success
-      value: 0.15
+      value: 0.45
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.45 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4376,11 +4378,11 @@ endpoints:
     name: Search posts on X (Twitter)
     summary: 'The posts X (Twitter) returns for a search, one row per post, in X''s order: id, link, text, time, author,
       counts, views, language, media, and whether it is a reply, a quote or a repost. `query` is X search text (rust
-      lang, from:nasa since:2026-10-01); `mode` latest or top; `limit` up to 100. `session` is your X login (the `auth_token`
-      and `ct0` cookies, from the Crawl4AI Session extension), used for this run only, never stored. Without it, only
-      a from:<account> query in mode latest works, by a slower second source, newest first; any other query is refused
-      as bad input, not billed. Columns: id, url, text, created, author, author_name, likes, reposts, replies, quotes,
-      views, language, media, is_reply, is_quote, is_repost.'
+      lang, from:nasa since:2026-10-01); `mode` latest or top; `limit` up to 100. `session` is your X login (`auth_token`
+      and `ct0`, from the Crawl4AI Session extension), for this run only. Without it, only from:<account> (since:/until:
+      allowed) in mode latest: the account''s timeline, newest first; older days via a slower second source. Other
+      queries are refused, not billed. Columns: id, url, text, created, author, author_name, likes, reposts, replies,
+      quotes, views, language, media, is_reply, is_quote, is_repost.'
     body_allowlist: true
     input:
       bodyType: json
@@ -4401,15 +4403,15 @@ endpoints:
           example: rust lang
     cost:
       type: per_success
-      value: 0.15
+      value: 0.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4447,15 +4449,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.45
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.45 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4488,15 +4490,15 @@ endpoints:
           example: nasa
     cost:
       type: per_success
-      value: 0.15
+      value: 0.2
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.2 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4528,15 +4530,15 @@ endpoints:
           example: four-seasons-hotel-san-francisco-san-francisco
     cost:
       type: per_success
-      value: 0.15
+      value: 1.35
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.35 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4573,7 +4575,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
@@ -4608,15 +4610,15 @@ endpoints:
           example: '@veritasium'
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4651,15 +4653,15 @@ endpoints:
           note: default 15
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4694,15 +4696,15 @@ endpoints:
           example: rust programming
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4741,15 +4743,15 @@ endpoints:
           example: dQw4w9WgXcQ
     cost:
       type: per_success
-      value: 0.15
+      value: 1.65
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 1.65 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4786,15 +4788,15 @@ endpoints:
           example: dQw4w9WgXcQ
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4825,15 +4827,15 @@ endpoints:
           example: dQw4w9WgXcQ
     cost:
       type: per_success
-      value: 0.15
+      value: 0.9
       currency: credit
       per: 1
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
-      note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
+      note: 'treg''s account price: 0.9 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
     docs_url: https://crawl4ai.com/llms.txt
     test_request:
@@ -4872,7 +4874,7 @@ endpoints:
       unit: call
       source: observed
       source_url: https://api.crawl4ai.com/recipes
-      checked: '2026-10-11'
+      checked: '2026-10-12'
       confidence: verified
       note: 'treg''s account price: 0.15 credits a call whatever pages the run fetched, second-source records included;
         a reply with no rows, a refused input and a failed run are free. The x-c4-cost header settles the actual charge.'
