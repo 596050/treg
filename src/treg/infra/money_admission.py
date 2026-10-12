@@ -152,11 +152,19 @@ class _Gate:
         self.ttl_ms = max(1, int(lease_s * 1000))
         self.local: list[asyncio.Lock] = []
         self.leases: list[tuple[str, str]] = []
+        # Count validity from the request start, never from a delayed Redis reply.
+        self.valid_until: dict[str, float] = {}
         # Record before SET: a cancelled/timed-out response may still have acquired the lease.
         self.attempted: list[tuple[str, str]] = []
         self.store: kv.Store | None = None
         self.renewer: asyncio.Task | None = None
         self.lost = False
+
+    def _ownership_lost(self) -> bool:
+        if self.lost or any(time.monotonic() >= end for end in self.valid_until.values()):
+            self.lost = True
+            self.observation.lease_lost = 1
+        return self.lost
 
     async def acquire(self, ids: list[int], wait_s: float) -> str | None:
         async with asyncio.timeout(wait_s):
@@ -171,34 +179,43 @@ class _Gate:
                 key, token = f"money-admission:org:{org_id}", uuid.uuid4().hex
                 self.attempted.append((key, token))
                 while True:
+                    if self._ownership_lost():
+                        return "lease_lost"
+                    started = time.monotonic()
                     result = await self.store.acquire_lease(key, token, self.ttl_ms)
                     if result == "acquired":
                         self.leases.append((key, token))
+                        self.valid_until[key] = started + self.ttl_ms / 1000
+                        if self._ownership_lost():
+                            return "lease_lost"
                         if self.renewer is None:
                             self.renewer = asyncio.create_task(self._renew())
                         break
                     if result != "busy":
                         self.observation.kv_errors += 1
                         return "kv_unavailable"
-                    if self.lost:
-                        return "lease_lost"
                     # Only the local head waiter polls Redis for an org. Keep handoff delay
                     # short relative to a money transaction without a request-wide poll storm.
                     await asyncio.sleep(random.uniform(0.003, 0.010))
-            return "lease_lost" if self.lost else None
+            return "lease_lost" if self._ownership_lost() else None
 
     async def _renew(self) -> None:
         try:
             while True:
                 await asyncio.sleep(max(0.01, self.lease_s / 3))
                 for key, token in tuple(self.leases):
-                    result = await self.store.renew_lease(key, token, self.ttl_ms)
-                    if result != "renewed":
+                    started = time.monotonic()
+                    if self._ownership_lost():
+                        return
+                    async with asyncio.timeout(self.valid_until[key] - started):
+                        result = await self.store.renew_lease(key, token, self.ttl_ms)
+                    if result != "renewed" or self._ownership_lost():
                         if result == "unavailable":
                             self.observation.kv_errors += 1
                         self.lost = True
                         self.observation.lease_lost = 1
                         return  # Do not cancel the transaction or reacquire a lost lease.
+                    self.valid_until[key] = started + self.ttl_ms / 1000
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - lost isolation, never a reason to interrupt accounting
@@ -226,6 +243,7 @@ class _Gate:
         finally:
             self.attempted.clear()
             self.leases.clear()
+            self.valid_until.clear()
             for lock in reversed(self.local):
                 lock.release()
             self.local.clear()

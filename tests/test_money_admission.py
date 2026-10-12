@@ -401,6 +401,131 @@ async def test_lease_renewal_preserves_ownership_while_body_runs(gate):
     assert row["lease_lost"] == 0
 
 
+@pytest.mark.parametrize("pause_s", (6, 10, 15))
+async def test_acquire_reply_does_not_restart_the_lease_validity_clock(gate, monkeypatch, pause_s):
+    settings, store = gate
+    settings.money_admission_lease_s = 15
+    now = [100.0]
+    monkeypatch.setattr(admission, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    original = store.acquire_lease
+
+    async def delayed_reply(*args):
+        result = await original(*args)
+        now[0] += pause_s
+        return result
+
+    monkeypatch.setattr(store, "acquire_lease", delayed_reply)
+    async with admission.admit([7], operation="reserve"):
+        assert bool(store.values) == (pause_s < 15)
+    [row] = completed()
+    assert row["mode"] == ("redis" if pause_s < 15 else "fallback")
+    assert row["fallback_lease_lost"] == (pause_s >= 15)
+    assert not store.values
+
+
+async def test_multi_org_acquire_cannot_enter_after_an_earlier_lease_expired(gate, monkeypatch):
+    settings, store = gate
+    settings.money_admission_lease_s = 15
+    now = [100.0]
+    monkeypatch.setattr(admission, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    original = store.acquire_lease
+
+    async def delayed_second(key, *args):
+        if key.endswith(":9"):
+            now[0] += 16
+            store.values["money-admission:org:3"] = ("new-owner", time.monotonic() + 10)
+        return await original(key, *args)
+
+    monkeypatch.setattr(store, "acquire_lease", delayed_second)
+    async with admission.admit([3, 9], operation="deferred"):
+        assert not admission._local_lock(3).locked()
+        assert not admission._local_lock(9).locked()
+        assert list(store.values) == ["money-admission:org:3"]
+    assert store.values["money-admission:org:3"][0] == "new-owner"
+    [row] = completed()
+    assert row["mode"] == "fallback" and row["fallback_lease_lost"] == 1
+
+
+@pytest.mark.parametrize("pause_s", (6, 10))
+async def test_renewer_resuming_after_a_pause_checks_last_confirmed_deadline(gate, monkeypatch, pause_s):
+    _, store = gate
+    now = [100.0]
+    monkeypatch.setattr(admission, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    observed = admission._Observation("close")
+    owned = admission._Gate(observed, 15)
+    try:
+        assert await owned.acquire([7], 1) is None
+        owned.renewer.cancel()
+        await asyncio.gather(owned.renewer, return_exceptions=True)
+        owned.renewer = None
+        wakeups = 0
+
+        async def delayed_wakeup(interval):
+            nonlocal wakeups
+            wakeups += 1
+            if wakeups > 1:
+                raise asyncio.CancelledError
+            now[0] += interval + pause_s
+
+        # Advance the gate's clock without pausing the suite or the real asyncio scheduler.
+        with monkeypatch.context() as patch:
+            patch.setattr(admission, "asyncio", SimpleNamespace(
+                sleep=delayed_wakeup, timeout=asyncio.timeout, CancelledError=asyncio.CancelledError))
+            if pause_s < 10:
+                with pytest.raises(asyncio.CancelledError):
+                    await owned._renew()
+            else:
+                await owned._renew()
+        assert store.renewed.is_set() == (pause_s < 10)
+        assert owned.lost == (pause_s >= 10)
+        assert observed.lease_lost == (pause_s >= 10)
+        assert admission._local_lock(7).locked()  # Loss never releases an active session's gate.
+        assert sum(phase == "acquire" for phase, _ in store.calls) == 1
+    finally:
+        await owned.release()
+
+
+async def test_renewal_reply_after_confirmed_validity_does_not_restore_ownership(gate, monkeypatch):
+    _, store = gate
+    now = [100.0]
+    monkeypatch.setattr(admission, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    original = store.renew_lease
+
+    async def late_reply(*args):
+        result = await original(*args)
+        now[0] += 10  # Simulate a reply observed after the old lease's remaining validity.
+        return result
+
+    monkeypatch.setattr(store, "renew_lease", late_reply)
+    async with admission.admit([7], operation="close"):
+        await asyncio.wait_for(store.renewed.wait(), 1)
+        await asyncio.sleep(0)
+        assert admission._local_lock(7).locked()
+    [row] = completed()
+    assert row["lease_lost"] == 1 and row["failed"] == 0
+    assert sum(phase == "acquire" for phase, _ in store.calls) == 1
+
+
+async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, monkeypatch):
+    _, store = gate
+    cancelled = asyncio.Event()
+
+    async def blocked_renewal(*args):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(store, "renew_lease", blocked_renewal)
+    async with admission.admit([7], operation="close"):
+        await asyncio.wait_for(cancelled.wait(), 1)
+        await asyncio.sleep(0)
+        assert admission._local_lock(7).locked()
+        assert store.values  # The caller must still finish its DB rollback/close.
+    [row] = completed()
+    assert row["lease_lost"] == 1 and row["kv_errors"] == 1 and row["failed"] == 0
+
+
 async def test_redis_outage_during_renewal_does_not_interrupt_the_transaction(gate):
     _, store = gate
     transaction_completed = False

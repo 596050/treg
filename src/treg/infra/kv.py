@@ -158,19 +158,31 @@ class RedisStore:
             _record_lease_timing("acquire", outcome, started)
 
     async def renew_lease(self, key: str, token: str, ttl_ms: int) -> RenewResult:
-        started = _clock()
-        outcome = "cancelled"
-        try:
-            async with asyncio.timeout(_TIMEOUT_S * 2):
-                renewed = await self._client.eval(_RENEW_LEASE, 1, key, token, ttl_ms)
-            outcome = "renewed" if renewed else "lost"
-            return outcome
-        except Exception as exc:  # noqa: BLE001
-            outcome = "unavailable"
-            _record_lease_error("renew", exc, started)
-            return "unavailable"
-        finally:
-            _record_lease_timing("renew", outcome, started)
+        """Retry one transient fault with the original token; never recreate an expired lease.
+
+        The admission gate additionally bounds this by its last confirmed validity deadline.
+        A lost reply may have extended the TTL, but only a confirmed renewal retains ownership.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _TIMEOUT_S * 4
+        for attempt in range(2):
+            if loop.time() >= deadline:
+                break
+            started = _clock()
+            outcome = "cancelled"
+            try:
+                async with asyncio.timeout_at(min(deadline, loop.time() + _TIMEOUT_S * 2)):
+                    renewed = await self._client.eval(_RENEW_LEASE, 1, key, token, ttl_ms)
+                outcome = "renewed" if renewed else "lost"
+                return outcome
+            except Exception as exc:  # noqa: BLE001 - cancellation and ownership loss never retry
+                outcome = "unavailable"
+                _record_lease_error("renew", exc, started)
+                if attempt or not _transient_lease_error(exc):
+                    return "unavailable"
+            finally:
+                _record_lease_timing("renew", outcome, started, retry=bool(attempt))
+        return "unavailable"
 
     async def release_lease(self, key: str, token: str) -> ReleaseResult:
         """Retry one ambiguous transient failure with the same owner-checked delete.

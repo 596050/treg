@@ -66,7 +66,7 @@ async def test_lease_failures_are_classified_without_secret_data(
 
     rows = kv.drain_lease_errors()
     assert len(rows) == 1
-    expected_count = (2 if phase == "release" and error_type in {
+    expected_count = (2 if phase in {"renew", "release"} and error_type in {
         "deadline_exceeded", "redis_timeout", "connection",
     } else 1)
     assert rows[0] == {
