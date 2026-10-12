@@ -378,7 +378,7 @@ endpoints:
         historical_serp_mode: {type: string, required: false, note: "live (default) | lost | all"}
         load_rank_absolute: {type: boolean, required: false, note: "include absolute SERP position; default false"}
         filters: {type: array, required: false, note: "max 8 conditions"}
-        order_by: {type: array, required: false, note: "max 3 rules"}
+        order_by: {type: array, required: false, note: "max 3 rules. Flat array of comma-separated \"field,direction\" strings (asc or desc). Field names match filters. Nested [[\"field\",\"desc\"]] (the filters-array shape) returns 40501 Invalid Field: 'order_by'.", example: ["keyword_data.keyword_info.search_volume,desc"]}
       note: "POST body is an array with exactly 1 task object (Live endpoints do not support multi-task arrays). Supported location+language pairs: https://docs.dataforseo.com/v3/dataforseo_labs/locations_and_languages/"
     test_request:
       body:
