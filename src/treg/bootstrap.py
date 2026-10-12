@@ -285,6 +285,7 @@ _CONTROL_ROUTE_KEYS: frozenset[RouteKey] = frozenset({
     ('/orgs/{org_id}/agents/observed', ('GET',), 'list_observed_agents'),
     ('/orgs/{org_id}/agents/{user_id}', ('DELETE',), 'revoke_agent'),
     ('/orgs/{org_id}/api-keys', ('GET',), 'list_api_keys'),
+    ('/orgs/{org_id}/api-keys/spend', ('GET',), 'api_key_spend'),
     ('/orgs/{org_id}/api-keys', ('POST',), 'create_api_key'),
     ('/orgs/{org_id}/api-keys/{key_id}', ('PATCH',), 'rename_api_key'),
     ('/orgs/{org_id}/api-keys/{key_id}/disable', ('POST',), 'disable_api_key'),

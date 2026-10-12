@@ -2,6 +2,7 @@
 title: The API — the only brain (FastAPI)
 status: shipped
 sources:
+  - src/treg/application/key_spend.py
   - src/treg/routers/media.py
   - src/treg/web/sitetrack.js
   - src/treg/api.py
@@ -82,6 +83,13 @@ and revokes all its keys; revoking a human key does not remove the human members
 
 `GET /calls` and `GET /runs` accept `api_key_id` and return the retained key id, name, and safe prefix.
 Billing, balance, and daily-cap checks still use the resolved membership.
+
+`GET /orgs/{id}/api-keys/spend` returns each key's billed spend over the last 30 UTC days
+(`spent_micro`, `charges`), read only from the daily spend rollup
+(`architecture/money.md`, "Spend per API key"). A member sees only their own keys, as on the list;
+the team's `unattributed` line (charges with no keyed audit row) is admin+ and `null` for others.
+`ready` is false, with no numbers, until the rollup has caught up once. `charges` counts settle
+entries, not calls.
 
 ## Feedback
 

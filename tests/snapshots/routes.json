@@ -1880,6 +1880,15 @@
   {
     "kind": "APIRoute",
     "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "name": "api_key_spend",
+    "path": "/orgs/{org_id}/api-keys/spend"
+  },
+  {
+    "kind": "APIRoute",
+    "methods": [
       "POST"
     ],
     "name": "create_api_key",

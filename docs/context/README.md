@@ -42,7 +42,7 @@ covers (frontmatter `sources:`). Regenerate this index with
 
 | Fragment | Status | Covers |
 |---|---|---|
-| [The API — the only brain (FastAPI)](interface/api.md) | shipped | media.py, sitetrack.js, api.py, bootstrap_handlers.py, … |
+| [The API — the only brain (FastAPI)](interface/api.md) | shipped | key_spend.py, media.py, sitetrack.js, api.py, … |
 | [Catalog browse taxonomy — open placement and naming decisions](interface/catalog-review-proposal.md) | backlog | — |
 | [The CLI (treg) + skill scaffolding](interface/cli.md) | shipped | cli.py, test_released_cli_compat.py, test_cli_key_compatibility.py, auth_helpers.py, … |
 | [The web dashboard (served from FastAPI)](interface/dashboard.md) | shipped | App.vue, views.ts, controller.js, agents.js, … |

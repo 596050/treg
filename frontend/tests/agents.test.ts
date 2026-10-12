@@ -62,9 +62,9 @@ test('initial Team loading still fetches the full roster; waiting polls only the
   vm.api.mockResolvedValue([])
   vm.loadApiKeys = keys.loadApiKeys
   await team.loadOrgAdmin.call(vm)
-  expect(vm.api).toHaveBeenCalledTimes(8)
+  expect(vm.api).toHaveBeenCalledTimes(9)
   expect(vm.api.mock.calls.map(([path]: [string]) => path)).toEqual(expect.arrayContaining([
-    '/orgs/1/members', '/orgs/1/agents', '/orgs/1/agents/observed',
+    '/orgs/1/members', '/orgs/1/agents', '/orgs/1/agents/observed', '/orgs/1/api-keys/spend',
   ]))
   vm.api.mockClear().mockResolvedValue({ connected: false })
   ready(vm)

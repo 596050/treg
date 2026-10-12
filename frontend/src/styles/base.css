@@ -165,6 +165,7 @@
   .key-actions-menu button.danger{color:var(--red)}
   .key-actions-menu button:disabled{opacity:.5;cursor:not-allowed;background:none}
   .key-table .key-identity{min-width:220px}
+  .key-table .key-spend{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   .key-table td{padding-top:12px;padding-bottom:12px;vertical-align:middle}
   .key-primary{display:flex;align-items:center;gap:7px;white-space:nowrap}
   .key-primary b{font-size:13px}

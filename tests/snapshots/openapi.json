@@ -10223,6 +10223,78 @@
         "summary": "Create Api Key"
       }
     },
+    "/orgs/{org_id}/api-keys/spend": {
+      "get": {
+        "description": "Billed spend per key over the last 30 UTC days, from the daily spend rollup.\n\nA member sees only their own keys, as on the list. The not-attributed line is team-wide ledger\ndetail, so it is admin+ like the ledger on `/orgs/{id}/balance`. `ready` is false until the\nrollup has caught up once; the page shows no number until then.",
+        "operationId": "api_key_spend_orgs__org_id__api_keys_spend_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "title": "Org Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-treg-token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Treg-Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-treg-org",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Treg-Org",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "treg_session",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Treg Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Key Spend Orgs  Org Id  Api Keys Spend Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Key Spend"
+      }
+    },
     "/orgs/{org_id}/api-keys/{key_id}": {
       "patch": {
         "operationId": "rename_api_key_orgs__org_id__api_keys__key_id__patch",

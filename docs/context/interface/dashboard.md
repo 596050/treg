@@ -122,6 +122,15 @@ Agent-token cache, local/session storage, or persisted queue. Logout and applica
 clear all retained issuances; closing/reloading the browser tab or losing the POST response before
 it is received cannot recover a hash-stored key. The UI tells the user to save it before closing.
 
+## Spend per API key
+
+Team -> API Keys has a "Spent last 30 days" column, from `GET /orgs/{id}/api-keys/spend`, which
+reads only the daily spend rollup; amounts show to the cent (cut, never rounded up) with the exact
+figure on hover, here and in the Usage spend list. Admins also see the team's "No API key" total, with an ⓘ that
+says where such charges come from (`NO_KEY` in `state/constants.js`). Until the rollup has caught
+up once, every cell shows "Preparing…" with "Spend history is being prepared. It will appear here within a few days." on hover. The page never labels
+anything as calls: one call can make several charges.
+
 ## Catalog, Connections, a provider
 
 - **Two questions, two pages.** The Catalog says what an agent can call; Connections says whose
