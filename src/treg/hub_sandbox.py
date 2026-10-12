@@ -88,7 +88,7 @@ globalThis.ctx = {
 
 
 def _emit(msg: dict) -> None:
-    sys.stdout.write(json.dumps(msg, ensure_ascii=False, separators=(",", ":")) + "\n")
+    sys.stdout.write(json.dumps(msg, separators=(",", ":")) + "\n")
     sys.stdout.flush()
 
 

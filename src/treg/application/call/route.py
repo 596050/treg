@@ -32,7 +32,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from ... import audit
+from ... import audit, jsontext
 from ...config import get_settings
 from ...infra.db import session_maker
 from ...domain import asynctasks as asynctasks_rules
@@ -939,7 +939,7 @@ def _audit_parent(parent: CallContext, ep: dict, status: int, charged: int, clie
 
 
 def _json(value, status: int, headers: dict[str, str]) -> UpstreamResponse:
-    body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+    body = jsontext.dumps_bytes(value, separators=(",", ":"))
 
     async def _one():
         yield body

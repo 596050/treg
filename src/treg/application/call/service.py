@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 import httpx
 
-from ... import analytics, archive, audit, oauth, oauth_providers
+from ... import analytics, archive, audit, jsontext, oauth, oauth_providers
 from ...application import hub as hub_app
 from ...application.hub import runner as hub_runner
 from ...application.hub import limits as hub_limits
@@ -561,7 +561,7 @@ async def _apply_managed_resource_result(
 
 
 def _json_response(value) -> UpstreamResponse:
-    body = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
+    body = jsontext.dumps_bytes(value, allow_nan=False, separators=(",", ":"))
     return _bytes_response(body, media_type="application/json")
 
 
@@ -717,8 +717,8 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                        if isinstance(exc.detail, dict) else 0)
             request.state.call_cost_micro = charged
             if idem_key and charged > 0 and exc.kind == "hub_run_failed":
-                error_body = json.dumps({"detail": exc.detail}, ensure_ascii=False,
-                                        allow_nan=False, separators=(",", ":")).encode()
+                error_body = jsontext.dumps_bytes({"detail": exc.detail},
+                                                  allow_nan=False, separators=(",", ":"))
                 try:
                     await _store_idempotent(
                         idem_key, caller, status_code=exc.status_code, body=error_body,
@@ -769,10 +769,8 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
             if exc.kind in ("route_caller_fault", "route_failed"):
                 request.state.call_cost_micro = charged
             if idem_key and charged > 0 and exc.kind in ("route_caller_fault", "route_failed"):
-                error_body = json.dumps(
-                    {"detail": exc.detail}, ensure_ascii=False, allow_nan=False,
-                    separators=(",", ":"),
-                ).encode()
+                error_body = jsontext.dumps_bytes(
+                    {"detail": exc.detail}, allow_nan=False, separators=(",", ":"))
                 try:
                     await _store_idempotent(
                         idem_key, caller, status_code=exc.status_code, body=error_body,

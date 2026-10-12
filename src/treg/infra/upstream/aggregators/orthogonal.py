@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 
+from .... import jsontext
 from . import AggregatorRequest, AggregatorResult
 
 BASE = "https://api.orthogonal.com/v1"
@@ -41,7 +42,7 @@ def build(route, key: str, query: list[tuple[str, str]] | dict, body: bytes | No
 
 
 def _dump(value) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+    return jsontext.dumps_bytes(value, separators=(",", ":"))
 
 
 def parse(status: int, body: bytes | dict) -> AggregatorResult:

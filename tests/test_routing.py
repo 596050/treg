@@ -554,6 +554,21 @@ async def test_routed_call_runs_the_cheapest_child_and_returns_output_raw_and_pr
     assert (ROUTED, "routed") in kinds and ("tomba.people.email.find", "platform") in kinds
 
 
+async def test_a_lone_surrogate_in_the_winning_body_is_relayed_as_its_escape(clients: AsyncClient, enrichment_on, monkeypatch):
+    """Re-encoding the winner's parsed body with ensure_ascii=False raised on a lone surrogate after
+    the child had answered: the caller got a 500 for a hit. The escape is the upstream's own text."""
+    seen = []
+    monkeypatch.setattr(call_service, "relay", _relay_by_provider(
+        {"tomba": [(200, {"data": {"email": "pat@stripe.com", "score": 99, "first_name": "Pat \ud835",
+                                    "last_name": "C", "verification": {"status": "valid"}}})]}, seen))
+    before = await _balance(clients)
+    r = await clients.post(f"/call/{ROUTED}", json={"full_name": "Pat C", "domain": "stripe.com"})
+    assert r.status_code == 200, r.text
+    assert b'"first_name":"Pat \\ud835"' in r.content
+    assert r.json()["output"]["first_name"] == "Pat \ud835"
+    assert before - await _balance(clients) == int(r.headers["X-Treg-Cost-Micro"]) == 8_900
+
+
 async def test_an_unverified_hit_carries_verify_advice(clients: AsyncClient, enrichment_on, monkeypatch):
     """A found address the provider did not vouch for (Tomba's verification status is not `valid`
     — the catch-all shape that bounced for a recruiting team on 2026-09-06) is still a HIT and

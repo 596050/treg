@@ -38,7 +38,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
-from ... import crypto
+from ... import crypto, jsontext
 from ...application.call.types import GatewayFailed, UpstreamRequest, UpstreamResponse
 from ...config import TREG_USER_AGENT, get_settings
 from ...models import Secret, Tool
@@ -222,7 +222,7 @@ async def relay(
     # Only carry a body when the caller actually sent one — otherwise passing an (unsized) stream
     # makes httpx frame the request `Transfer-Encoding: chunked`, putting a bogus body-frame on a
     # GET/HEAD/OPTIONS (which strict upstreams reject).
-    content = (json.dumps(json_body, separators=(",", ":"), ensure_ascii=False).encode()
+    content = (jsontext.dumps_bytes(json_body, separators=(",", ":"))
                if json_body is not None else request.body_stream() if request.has_body else None)
     # A streamed body with no length makes httpx frame it `Transfer-Encoding: chunked`. The bytes are
     # the caller's, unaltered, so the caller's own Content-Length is exact — carry it, and httpx
