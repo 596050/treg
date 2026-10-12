@@ -321,7 +321,7 @@ endpoints:
     method: GET
     path: /serp
     name: "Google organic results with true rank and page blocks"
-    summary: "One Google results page as JSON: every organic result with its rank (position, and position_absolute counting the blocks above it), and each block Google showed (AI Overview, People also ask, local pack, videos, ...). Localised to a country, a language and optionally a city. When results is empty, empty_reason says why: google_no_results (Google matched nothing) or rescue_no_results (another provider may still have results)."
+    summary: "One Google results page as JSON: every organic result with its rank (position, and position_absolute counting the blocks above it), and each block Google showed (People also ask, local pack, videos, ...; the AI Overview only when source is gg, see note). Localised to a country, a language and optionally a city. When results is empty, empty_reason says why: google_no_results (Google matched nothing) or rescue_no_results (another provider may still have results)."
     strict_query: true
     input:
       queryParams:
@@ -349,6 +349,7 @@ endpoints:
     added: '2026-10-09'
     docs_url: https://crawl4ai.com/llms.txt
     example_response: examples/crawl4ai.google.serp.organic.json
+    note: "source names the path that answered. gg is Google fetched directly and carries ai_overview when Google showed one; gs is Crawl4AI's fallback and never carries ai_overview. Calls made in parallel mostly land on gs. For the AI Overview use cloro.google.serp.organic with include.aioverview true, crawl4ai.google.serp.ai_mode, litescrape.google.serp.ai_overview or dataforseo.x.serp-google-organic-live-advanced with load_async_ai_overview true."
 
   # --- Many URLs ---------------------------------------------------------------------------------
   - id: crawl4ai.web.extract.batch
