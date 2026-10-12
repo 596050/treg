@@ -6,6 +6,7 @@
     treg-worker asynctasks settle [--limit 50]       # complete deferred metered-call holds
     treg-worker arena insights [--max-seconds 110]   # fold new audit rows into the Arena aggregate
     treg-worker catalog stats [--max-rows 500000]    # fold new audit rows into per-day endpoint stats
+    treg-worker spend rollup [--max-rows 50000]      # fold new ledger settles into per-key daily spend
     treg-worker jev xboost [--posts 60] [--min-likes 150]   # the /jev launch-radar demo: X posts <24h -> jev
     treg-worker admin purge-evidence [--batch-size 5000]  # blank expired error evidence past 14-day retention
     treg-worker admin erase-archive --org <id>             # erase what an opted-out team stored in the archive
@@ -243,7 +244,9 @@ async def _overflow_verify(args) -> int:
 async def _asynctasks_settle(args) -> int:
     from .infra.db import verify_db
     from .application.asynctasks import settle_due
+    from .application.call import keyslots
 
+    keyslots.check_accounts()  # polls use treg's accounts: an unusable one refuses to start
     await verify_db()
     result = await settle_due(limit=args.limit)
     print(json.dumps(result.__dict__, sort_keys=True))
@@ -260,6 +263,8 @@ async def _hub_check(args) -> int:
     from .application.hub.health import check_as_maker
     from .infra.db import session_maker, verify_db
     from .models import HubTool
+    from .application.call import keyslots
+    keyslots.check_accounts()  # checks make platform calls: an unusable account refuses to start
     await verify_db()
     if not hub_enabled():
         print("hub is off (TREG_HUB_ENABLED); nothing to check")
@@ -332,6 +337,16 @@ async def _catalog_stats(args) -> int:
 
     await verify_db()
     result = await refresh(max_rows=args.max_rows)
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+async def _spend_rollup(args) -> int:
+    from .infra.db import verify_db
+    from .application.key_spend_rollup import refresh
+
+    await verify_db()
+    result = await refresh(max_rows=args.max_rows, max_recount_seconds=args.max_recount_seconds)
     print(json.dumps(result, sort_keys=True))
     return 0
 
@@ -473,6 +488,14 @@ def main(argv: list[str] | None = None) -> int:
     stats.add_argument("--max-rows", type=int, default=500_000,
                        help="audit rows to consume in one run; the next run resumes from the cursor")
     stats.set_defaults(fn=_catalog_stats)
+    spend = sub.add_parser("spend", help="spend read models derived from the ledger")
+    spendsub = spend.add_subparsers(dest="cmd", required=True)
+    rollup = spendsub.add_parser("rollup", help="fold new ledger settles into per-key, per-tool, per-day spend")
+    rollup.add_argument("--max-rows", type=_positive_int, default=50_000,
+                        help="settle entries to fold in one run; the next run resumes from the cursor")
+    rollup.add_argument("--max-recount-seconds", type=float, default=60.0,
+                        help="time one run spends on the daily recount; the next run resumes it")
+    rollup.set_defaults(fn=_spend_rollup)
     jev = sub.add_parser("jev", help="the /jev landing-page demos")
     jevsub = jev.add_subparsers(dest="cmd", required=True)
     xb = jevsub.add_parser("xboost", help="launch posts on X from the last 24h -> forensics -> jev; stores the run for /jev")

@@ -201,6 +201,25 @@ _RATE_LIMITS: dict[str, dict] = {
     "tikhub": {"limit": 100, "window_s": 1, "source": "policy"},
     "getleadsio": {"limit": 100, "window_s": 60, "source": "docs"},
 }
+# An endpoint whose upstream allowance differs from its provider's has its own bucket here. It
+# replaces the provider entry for that endpoint and does not draw from the provider's bucket.
+_ENDPOINT_RATE_LIMITS: dict[str, dict] = {
+    # Email Verifier publishes no limit; its 429s carry x-ratelimit-limit 20 per minute, far below
+    # the documented 1,000/min for other APIs. A provider-wide 20/min would slow every other route.
+    "contactout.people.email.verify": {"limit": 20, "window_s": 60, "source": "headers"},
+}
+
+# Calls in progress a provider allows on treg's own key (domain/capacity/fair_share.py shares them
+# between teams; BYOK calls bypass it). Only providers that publish or report such a cap belong here.
+_CONCURRENCY: dict[str, int] = {
+    # The key reports its concurrency room in every answer (usage.remaining_before.concurrent).
+    "crawl4ai": 500,
+    "hlrlookup": 210,
+    # The key status API reports its configured concurrency limit.
+    "litescrape": 25,
+    # treg's own conservative setting for the shared account (catalog row `limits`).
+    "fishaudio": 5,
+}
 
 
 def policy_population(configured_keys: set[str] | None = None) -> list[str]:

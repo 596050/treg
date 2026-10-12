@@ -436,6 +436,11 @@ without importing the heavy database stack into the light `treg` CLI.
   (`--max-rows`, default 500,000, bounds one pass; schedule it every few minutes). The catalog keeps
   computing observations live until this command has caught up once, so it can be scheduled after
   the application deploys, and a self-hosted registry that never schedules it loses nothing.
+- `treg-worker spend rollup` folds new ledger settle entries into per-key, per-tool, per-day spend
+  (`--max-rows`, default 50,000, bounds one pass; schedule it every few minutes, after the web
+  service runs a build with revision 0070). It reads the primary database in small batches, and
+  its first run backfills 31 days over as many runs as `--max-rows` needs. The Team page's "Spent"
+  column and the Usage page's spend chart say spend history is being prepared until it has caught up once.
 - `treg-worker jev xboost` runs the `/jev` launch-radar demo once a day: it calls treg's own `/call/` API
   with `TREG_JEV_TREG_TOKEN` (a member token of the demo team, so the spend is an ordinary bill) and jev
   through the Vercel AI Gateway (`TREG_AI_GATEWAY_API_KEY`), and stores the run under Ephemeral for the page.

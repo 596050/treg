@@ -122,6 +122,22 @@ Agent-token cache, local/session storage, or persisted queue. Logout and applica
 clear all retained issuances; closing/reloading the browser tab or losing the POST response before
 it is received cannot recover a hash-stored key. The UI tells the user to save it before closing.
 
+## Spend per API key
+
+Team -> API Keys has a "Spent last 30 days" column, from `GET /orgs/{id}/api-keys/spend`, which
+reads only the daily spend rollup; amounts show to the cent (cut, never rounded up) with the exact
+figure on hover, here and in the Usage spend list. Admins also see the team's "No API key" total, with an ⓘ that
+says where such charges come from (`NO_KEY` in `state/constants.js`). Until the rollup has caught
+up once, every cell shows "Preparing…" with "Spend history is being prepared. It will appear here within a few days." on hover. The page never labels
+anything as calls: one call can make several charges.
+
+Activity -> Usage opens with a Spend card from `GET /orgs/{id}/usage/spend`: bars by day, week or
+month (`SpendBars.vue`), stacked by API key or, within one provider, by tool, with filters in
+`SelectMenu` dropdowns and its own `DateRangePicker`, whose `min` keeps every pick inside the
+rollup's history ("History starts on ..."). The card loads on its own, never waits for the usage
+counts below it, and says "Spend history is being prepared. It will appear here within a few days." like the API Keys tab until the rollup has
+caught up once.
+
 ## Catalog, Connections, a provider
 
 - **Two questions, two pages.** The Catalog says what an agent can call; Connections says whose

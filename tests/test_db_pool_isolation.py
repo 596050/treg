@@ -73,6 +73,8 @@ EXPECTED_MAKERS: dict[str, set[str]] = {
     "worker.py": {API},
     # Runs only inside `treg-worker catalog stats`; same reasoning as `worker.py`.
     "application/catalog_stats.py": {API},
+    # Runs only inside `treg-worker spend rollup`; same reasoning as `worker.py`.
+    "application/key_spend_rollup.py": {API},
     # Runs only inside `treg-worker admin purge-evidence`; same reasoning as `worker.py`.
     "application/evidence_retention.py": {API},
     # Off-request writers.

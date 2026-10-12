@@ -15,6 +15,8 @@ from sqlalchemy import event
 from sqlmodel import select
 
 from treg.application import asynctasks as task_app
+
+_real_poll = task_app._poll
 from treg.application.call import service as call_service
 from treg.application.call.resolve import MarketplaceCall
 from treg.application.call.types import UpstreamResponse
@@ -145,6 +147,65 @@ async def test_worker_errors_grow_backoff_and_progress_resets_it(
         row = await db.get(AsyncTaskRecord, call_id)
         assert row.consecutive_failures == 0
         assert await db.get(Hold, call_id) is not None
+
+
+async def test_a_task_on_a_retired_account_releases_its_hold_at_once(
+    clients: AsyncClient, monkeypatch, replicate_platform,
+):
+    """The account that accepted it is gone: no poll can ever observe it, so the hold goes back
+    now instead of after every tick until the deadline."""
+    call_id = await _due_submission(clients, monkeypatch, {})
+    monkeypatch.setattr(task_app, "_poll", _real_poll)
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        row.key_slot = "retired"
+        await db.commit()
+    # This process holds no further replicate accounts at all: more likely a worker that lost its
+    # environment than a retirement, so the row backs off and keeps its hold.
+    await task_app.settle_due()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.PENDING and await db.get(Hold, call_id) is not None
+        row.next_check_at = utcnow_naive() - timedelta(seconds=1)
+        row.error = ""
+        await db.commit()
+    # Its accounts are configured, and "retired" is not among them: final.
+    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(
+        {"replicate": {"b": {"platform_key_replicate": "test-platform-token-b"}}}))
+    get_settings.cache_clear()
+    await task_app.settle_due()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.RELEASED and row.settled_micro == 0
+        assert "no longer configured" in row.error
+        assert await db.get(Hold, call_id) is None
+
+
+async def test_a_failed_release_on_a_retired_account_leaves_the_tick_running(
+    clients: AsyncClient, monkeypatch, replicate_platform,
+):
+    """The release is outside the poll's error handler: when it fails, the row backs off with its
+    hold and `_process` answers like any other row, without raising."""
+    call_id = await _due_submission(clients, monkeypatch, {})
+    monkeypatch.setattr(task_app, "_poll", _real_poll)
+    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(
+        {"replicate": {"b": {"platform_key_replicate": "test-platform-token-b"}}}))
+    get_settings.cache_clear()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        row.key_slot = "retired"
+        await db.commit()
+
+    async def failing_release(*args, **kwargs):
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(task_app, "_finish_balance", failing_release)
+    async with session_maker() as db:
+        attempt = (await db.get(AsyncTaskRecord, call_id)).attempts
+    assert await task_app._process(call_id, None, attempt) == "backed_off"
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.PENDING and await db.get(Hold, call_id) is not None
 
 
 async def test_queued_worker_rows_are_not_claimed_before_a_poll_slot(
@@ -633,6 +694,7 @@ async def test_platform_openrouter_model_is_bound_to_the_selected_catalog_row(
         row = (await db.execute(select(AsyncTaskRecord).where(
             AsyncTaskRecord.task_id == "video-owned"))).scalar_one()
     assert row.endpoint_id == "openrouter.x.google-veo-3-1-lite"
+    assert row.key_slot == "primary", "the task names the account that accepted it"
 
 
 async def test_platform_model_selector_rejects_duplicate_json_keys(
@@ -789,7 +851,7 @@ async def test_legacy_platform_async_resources_are_recorded_and_authorized(
 
     async with session_maker() as db:
         records = (await db.execute(select(AsyncResourceRecord))).scalars().all()
-    assert records
+    assert records and {r.key_slot for r in records} == {"primary"}
 
 
 @pytest.mark.parametrize("url", [

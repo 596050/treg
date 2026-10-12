@@ -29,7 +29,7 @@ async def validate_bindings(bindings: list[dict], *, org_id: int, caller_email: 
         # A `platform_setting` binding injects one of TREG's own credentials (a tier-4 provider key, the
         # Google Ads developer token) — relay resolves it from settings and never looks at secret_id, so
         # a caller-supplied one would be a straight read of our key through any tool they register.
-        # Only the server builds these (_provider_bindings / _platform_bindings); user input never may.
+        # Only the server builds these (_provider_bindings / platform_bindings); user input never may.
         if b.get("platform_setting"):
             raise ToolConfigError(
                 "a binding may not name a platform_setting — treg's own credentials are server-managed "

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
@@ -26,6 +28,57 @@ PUBLIC_HOST_ALIASES: tuple[str, ...] = ("treg.superdesign.dev", "treg.to")
 # Deliberately one-way — only ever the pre-move name, never treg.to — so a browser that cached the
 # old→new 301 can never meet a new→old redirect and loop, even while a rollback is in effect.
 LEGACY_PUBLIC_HOSTS: tuple[str, ...] = ("treg.superdesign.dev",)
+
+
+PRIMARY_SLOT = "primary"
+_SLOT_LABEL = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+
+
+@dataclass(frozen=True)
+class PlatformSlot:
+    """One treg-owned account behind a provider. `slot` is the operator's label for it (the
+    deployment's own `platform_key_<provider>` is `primary`), never a credential: it is what durable
+    rows, buckets and telemetry name. A label survives reordering the accounts and regenerating an
+    account's key; removing one retires everything created on it."""
+
+    slot: str
+    # setting name -> value; empty for the primary, whose are the fields. Credentials: never in repr.
+    values: Mapping[str, str] = field(repr=False)
+
+    def value(self, setting: str) -> str:
+        return self.values.get(setting, "")
+
+
+@lru_cache
+def _parse_platform_pools(raw: str) -> dict[str, dict[str, dict[str, str]]]:
+    """`TREG_PLATFORM_ACCOUNTS` parsed: {provider: {label: account settings}}. Every account names
+    its provider's `platform_key_<provider>` and only non-empty `platform_*` settings."""
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        raise ValueError("platform_accounts must be a JSON object") from None
+    if not isinstance(parsed, dict):
+        raise ValueError("platform_accounts must be a JSON object")
+    if len({provider.lower() for provider in parsed}) != len(parsed):
+        raise ValueError("platform_accounts names a provider twice (provider names are case-insensitive)")
+    pools: dict[str, dict[str, dict[str, str]]] = {}
+    for provider, accounts in parsed.items():
+        primary = platform_setting_name(provider)
+        if not isinstance(accounts, dict) or not all(
+                isinstance(label, str) and _SLOT_LABEL.fullmatch(label) and label != PRIMARY_SLOT
+                and isinstance(a, dict) and a.get(primary)
+                and all(isinstance(k, str) and k.startswith("platform_")
+                        and isinstance(v, str) and v.strip() for k, v in a.items())
+                for label, a in accounts.items()):
+            raise ValueError(
+                f"platform_accounts[{provider!r}] must map account labels (lowercase, not "
+                f"{PRIMARY_SLOT!r}) to objects that each name {primary} and only non-empty "
+                "platform_* settings")
+        pools[provider.lower()] = {label: {k: v.strip() for k, v in a.items()}
+                                   for label, a in accounts.items()}
+    return pools
 
 
 def platform_setting_name(provider: str) -> str:
@@ -60,7 +113,9 @@ TREG_USER_AGENT = "treg/1.0 (+https://treg.to)"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="TREG_", extra="ignore")
+    # Most of these values are credentials: a validation error names the field, never the value.
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="TREG_", extra="ignore",
+                                      hide_input_in_errors=True)
 
     review_sample_rate: float = Field(default=0, ge=0, le=1)
     feedback_hint_rate: float = Field(default=0, ge=0, le=1)
@@ -180,6 +235,10 @@ class Settings(BaseSettings):
     spool_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
     spool_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     spool_parse_concurrency: int = Field(default=2, ge=1, le=16)
+    # Fair share of a provider's concurrency on treg's own keys (domain/capacity/fair_share.py):
+    # how long a call waits in line for a place before a routed job moves on and a direct call is
+    # refused, not charged. 0 turns the gate off (TREG_FAIR_SHARE_WAIT_S=0).
+    fair_share_wait_s: float = Field(default=2.0, ge=0, le=30)
 
     # ---- referral program (referrals.py) --------------------------------------------------------
     # Flat bounties, not a percentage of top-ups. At 0% platform margin a percentage would be a
@@ -330,6 +389,11 @@ class Settings(BaseSettings):
     # happens to hold a key can't start spending it by accident. `TREG_PLATFORM_PROVIDERS=""` in the
     # Render dashboard turns the whole feature off without a redeploy.
     platform_providers: str = ""
+    # More treg-owned accounts behind a provider, by label (rules: `_parse_platform_pools`):
+    # {"tomba": {"b": {"platform_key_tomba": "...", "platform_key_tomba_secret": "..."}}}.
+    # `platform_key_<provider>` above stays the `primary` account and the only one every reader
+    # outside the call path uses; the call path spreads platform calls across all of them.
+    platform_accounts: str = ""
     # Whether DISCOVERY steers to routed rows: `treg.<capability>` first in search, and a routed
     # parent pulled in whenever one of its children matched. `off` leaves every routed endpoint
     # callable and priced — only the steering stops, and search looks as it did before routing
@@ -762,6 +826,12 @@ class Settings(BaseSettings):
                 raise ValueError("paused_provider_messages must map service ids to non-empty strings")
         return v
 
+    @field_validator("platform_accounts")
+    @classmethod
+    def _platform_accounts_shape(cls, v: str) -> str:
+        _parse_platform_pools(v)  # raises ValueError on a malformed value
+        return v
+
     @property
     def fixed_login_code_hashes(self) -> dict[str, str]:
         """The normalised `TREG_FIXED_LOGIN_CODES` entries; empty = no designated accounts."""
@@ -833,6 +903,40 @@ class Settings(BaseSettings):
         provider balance is used.
         """
         return (provider or "").lower() in self.platform_provider_set
+
+    def platform_slots(self, provider: str) -> tuple[PlatformSlot, ...]:
+        """Every treg-owned account behind `provider`, the primary first; empty without a primary
+        key. Says nothing about the allow-list: `platform_key_for` stays the serving switch."""
+        setting = platform_setting_name(provider)
+        primary = getattr(self, setting, "") or ""
+        if not primary:
+            return ()
+        return (PlatformSlot(PRIMARY_SLOT, {}),
+                *self.platform_extra_accounts().get((provider or "").lower(), ()))
+
+    def platform_extra_accounts(self) -> dict[str, tuple[PlatformSlot, ...]]:
+        """`TREG_PLATFORM_ACCOUNTS` by provider, whether or not the primary key is set."""
+        return {provider: tuple(PlatformSlot(label, values) for label, values in sorted(accounts.items()))
+                for provider, accounts in _parse_platform_pools(self.platform_accounts).items()}
+
+    def platform_credential(self, setting: str, account: str | None) -> str:
+        """The value a `platform_setting` binding injects. Without an account, the deployment's
+        own field: the primary account. With one (`<provider>/<label>`), that account's value, or
+        "" when it is not configured: another account's credential would act on objects that exist
+        only on the named one."""
+        if account is None:
+            return getattr(self, setting, "") or ""
+        provider, _, label = account.partition("/")
+        values = _parse_platform_pools(self.platform_accounts).get(provider, {}).get(label, {})
+        return values.get(setting, "")
+
+    def platform_credential_values(self, setting: str) -> tuple[str, ...]:
+        """Every value `setting` holds across treg's accounts: what error-body masking hides."""
+        own = (getattr(self, setting, "") or "").strip()
+        pooled = (values.get(setting, "")
+                  for accounts in _parse_platform_pools(self.platform_accounts).values()
+                  for values in accounts.values())
+        return tuple(dict.fromkeys(v for v in (own, *pooled) if v))
 
     def platform_key_for(self, provider: str) -> str | None:
         """treg's own key for `provider`, or None if tier 4 must not serve it. BOTH conditions have to

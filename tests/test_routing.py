@@ -446,7 +446,7 @@ async def test_routed_plan_keeps_an_exhausted_provider_when_its_overflow_route_i
     monkeypatch.setenv("TREG_OVERFLOW_KEY_MONID", "MONID-KEY")
     get_settings.cache_clear()
     monkeypatch.setattr(call_route.capacity_view, "is_exhausted",
-                        lambda provider, endpoint_id=None: provider == "akta")
+                        lambda provider, endpoint_id=None, slot=None: provider == "akta")
     route = SimpleNamespace(aggregator="monid", agg_price_micro=10_000)
     monkeypatch.setattr(call_route.overflow_routes_view, "for_endpoint",
                         lambda endpoint_id: [route] if endpoint_id == "akta.companies.news" else [])
@@ -496,7 +496,7 @@ async def test_routed_call_reaches_an_enabled_overflow_before_the_next_provider(
         await db.commit()
     call_route.overflow_routes_view.invalidate()
     monkeypatch.setattr(call_route.capacity_view, "is_exhausted",
-                        lambda provider, endpoint_id=None: provider == "akta")
+                        lambda provider, endpoint_id=None, slot=None: provider == "akta")
 
     async def overflow_send(client, req):
         return httpx.Response(200, json={
@@ -552,6 +552,21 @@ async def test_routed_call_runs_the_cheapest_child_and_returns_output_raw_and_pr
     rows = (await clients.get("/calls")).json()
     kinds = {(x["tool_name"], x.get("credential_tier")) for x in rows}
     assert (ROUTED, "routed") in kinds and ("tomba.people.email.find", "platform") in kinds
+
+
+async def test_a_lone_surrogate_in_the_winning_body_is_relayed_as_its_escape(clients: AsyncClient, enrichment_on, monkeypatch):
+    """Re-encoding the winner's parsed body with ensure_ascii=False raised on a lone surrogate after
+    the child had answered: the caller got a 500 for a hit. The escape is the upstream's own text."""
+    seen = []
+    monkeypatch.setattr(call_service, "relay", _relay_by_provider(
+        {"tomba": [(200, {"data": {"email": "pat@stripe.com", "score": 99, "first_name": "Pat \ud835",
+                                    "last_name": "C", "verification": {"status": "valid"}}})]}, seen))
+    before = await _balance(clients)
+    r = await clients.post(f"/call/{ROUTED}", json={"full_name": "Pat C", "domain": "stripe.com"})
+    assert r.status_code == 200, r.text
+    assert b'"first_name":"Pat \\ud835"' in r.content
+    assert r.json()["output"]["first_name"] == "Pat \ud835"
+    assert before - await _balance(clients) == int(r.headers["X-Treg-Cost-Micro"]) == 8_900
 
 
 async def test_an_unverified_hit_carries_verify_advice(clients: AsyncClient, enrichment_on, monkeypatch):

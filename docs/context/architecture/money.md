@@ -32,6 +32,9 @@ sources:
   - src/treg/application/hub/runner.py
   - src/treg/infra/stripe.py
   - src/treg/reconcile.py
+  - src/treg/application/key_spend_rollup.py
+  - src/treg/alembic/versions/0070_api_key_spend_rollup.py
+  - tests/test_key_spend_rollup.py
   - src/treg/domain/referrals.py
   - src/treg/api.py
   - src/treg/application/signup.py
@@ -324,6 +327,24 @@ counted separately and are not a successful rollout. Owner-checked renewal and d
 or deleting a newer owner's lease. TTL and renewal cannot prove that an old database transaction
 has stopped, which is why database locks remain necessary.
 
+Renewal retries a transient timeout/connection failure once with the same owner-checked
+`PEXPIRE`: it cannot recreate an expired key or extend a successor's token. Each attempt has
+a 200 ms cooperative deadline within a shared 400 ms budget. The gate passes the earliest
+confirmed expiry of all held leases into `renew_lease`, which checks this absolute deadline
+before each EVAL and caps each attempt's timeout by the remaining budget. A late transient
+error or a timeout translated by driver cleanup cannot start another attempt after that deadline;
+these checks cannot preempt an already-running command or a scheduling pause.
+Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
+counts validity from each acquire/renew request's start, not its reply; after a scheduling pause
+it checks this deadline before renewing or entering the session. A renewal reply observed after
+the previous deadline marks isolation lost even if Redis accepted the extension. It never
+reacquires, cancels the transaction or releases the local gate before session cleanup. Failed
+attempts remain in the existing KV diagnostics even when the retry recovers.
+Confirmed validity exhausted before an attempt, by its validity timeout, or by the gate's outer
+timeout reports `deadline_expired`, not KV unavailability. The admission summary counts it once
+per scope alongside `lease_lost`, without increasing `kv_errors`. Actual command failures still
+retain their diagnostic rows if the validity deadline also expires during failure cleanup.
+
 Lease cleanup retries a transient timeout/connection failure at most once, always with the same
 token-checked Lua delete. Each attempt keeps its 200 ms deadline within a shared 400 ms per-key
 budget; authentication/permission errors and cancellation do not retry. These are asyncio time
@@ -333,7 +354,7 @@ A retry finding no matching token reports `not_owned`: an earlier delete may hav
 without its response, or the lease expired/changed owners. It cannot delete a replacement owner's
 lease and does not manufacture a new lease-loss observation. Repeated failures leave expiry as
 the backstop. Cleanup still follows database session closure and never repeats accounting or
-upstream work. The admission acquisition budget remains five seconds; cleanup is observed
+upstream work. The admission acquisition budget still defaults to five seconds; cleanup is observed
 separately from execution in the existing scope totals.
 
 This is best-effort contention isolation, not a global money concurrency cap, durable queue or
@@ -670,6 +691,42 @@ Read-only, query-time, no scheduler. Three questions, each needing its own sourc
 Two aggregations happen in Python rather than SQL on purpose - the ledger's provenance lives in a JSON
 `meta` column (portable JSON extraction across SQLite and Postgres is not worth a report), and these
 are admin-scale windows over a bounded number of metered calls, the same tradeoff `admin_stats` makes.
+
+## Spend per API key (`application/key_spend_rollup.py`)
+
+What each API key spent is ledger money, attributed through the audit row. The ledger's `settle`
+entries are the only money; `CallRecord.call_ref` (the ledger `call_id` of a metered call) supplies
+only the key. A routed attempt (`<ref>:r1`) or an overflow hold (`<ref>:overflow`) settles under a
+suffixed id whose own audit row may not exist, so it falls back to the part before the first colon.
+The audit row must belong to the same team. A charge with no keyed audit row (a dashboard session,
+an MCP connector login, a hub run, a call from before keys were recorded, or a row `audit.py` shed)
+lands on the team's one **not attributed** line. Per-key lines plus that line equal the ledger.
+
+No page computes this. `treg-worker spend rollup`, a cron, folds new settle entries into
+`ApiKeySpendDay`: team + API key (`0` = not attributed) + tool (the entry's `endpoint_id`) + UTC
+day -> `spent_micro` and `charges`. `charges` counts settle entries with money, not calls: a
+routed call or an overflow hold settles more than once. The fold:
+
+- walks the ledger in `(created_at, id)` order from a persisted watermark (`ApiKeySpendCursor`;
+  ledger ids are random, so the id alone cannot be a cursor), over the `created_at` index;
+- leaves entries younger than a few minutes for the next run: the audit row that names the key is
+  written after the settle, through a queue;
+- reads small batches, each in its own short transaction: lock the cursor row, read the entries,
+  look their keys up by `call_ref IN (...)` in small chunks over its index, add to the day rows in
+  the database (`spent_micro = spent_micro + ...`), move the watermark, commit. The row lock
+  serializes overlapping runs, so an entry is never folded twice;
+- starts its history 31 UTC days back and is capped per run (`--max-rows`), so the first backfill
+  catches up over several runs. Until it has caught up once, the pages say spend history is being prepared.
+
+Once a UTC day, after a run that caught up past midnight, the last two complete days are recounted
+per team from the ledger (over `(org_id, created_at)`) and REPLACE that team's rows for those days.
+That repairs a settle committed after the fold had passed its timestamp, and an audit row that
+landed after the lag. A recount that differs from the fold is logged as a warning. A recount can
+outlast one cron interval, so it is a lease on the cursor row, taken before any team is read: a
+run that finds another run's live lease skips it. Each team's rows are replaced in one transaction
+that re-checks the lease under the row lock and records the team as done, so a later run resumes
+after it and two runs never replace the same team. One run spends at most `--max-recount-seconds`
+on it (at least one team), and a run that dies holds the lease only until it expires.
 
 ## Call settlement and provider evidence
 

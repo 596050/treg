@@ -52,6 +52,9 @@ _BLAME_BY_KIND: dict[str, Blame] = {
     "provider_capacity": "treg",
     # This deployment paused the provider (TREG_PAUSED_PROVIDERS): refused before any hold.
     "provider_paused": "treg",
+    # Fair share: the provider on treg's key is fully used and this team already holds calls on it
+    # (domain/capacity/fair_share.py). Not charged; a routed job moves to its next provider.
+    "share_busy": "caller",
     # Routed endpoints (treg.<capability>): the caller's identity fits no provider, or the
     # ceiling they set is below the cheapest candidate, or every candidate failed.
     "route_no_candidate": "caller",
@@ -60,6 +63,9 @@ _BLAME_BY_KIND: dict[str, Blame] = {
     "route_caller_fault": "caller",
     "route_not_found": "caller",       # the requested page or record does not exist at its source
     "injection_failed": "treg",
+    "platform_account_retired": "treg",
+    "platform_account_split": "treg",
+    "platform_account_unavailable": "treg",
     "ssrf_refused": "treg",
     "connect_failed": "upstream",
     "read_timeout": "upstream",

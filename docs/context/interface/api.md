@@ -2,6 +2,7 @@
 title: The API — the only brain (FastAPI)
 status: shipped
 sources:
+  - src/treg/application/key_spend.py
   - src/treg/routers/media.py
   - src/treg/web/sitetrack.js
   - src/treg/api.py
@@ -82,6 +83,21 @@ and revokes all its keys; revoking a human key does not remove the human members
 
 `GET /calls` and `GET /runs` accept `api_key_id` and return the retained key id, name, and safe prefix.
 Billing, balance, and daily-cap checks still use the resolved membership.
+
+`GET /orgs/{id}/api-keys/spend` returns each key's billed spend over the last 30 UTC days
+(`spent_micro`, `charges`), read only from the daily spend rollup
+(`architecture/money.md`, "Spend per API key"). A member sees only their own keys, as on the list;
+the team's `unattributed` line (charges with no keyed audit row) is admin+ and `null` for others.
+`ready` is false, with no numbers, until the rollup has caught up once. `charges` counts settle
+entries, not calls.
+
+`GET /orgs/{id}/usage/spend` (admin+) is the Usage page's spend chart, from the same rollup only:
+`from`/`to` (UTC days, default the last 30), `group` (`day`, `week`, `month`), `stack` (`key`, or
+`tool` with a `provider`), and optional `key` and `provider` filters. The range starts no earlier
+than the rollup's `history_from`. The biggest seven series keep their own color slot and the rest
+fold into one Other, so a bucket has at most eight parts; `ranking` lists every series and
+`options` the keys and providers before any filter. Four grouped reads of the rollup, whatever the
+team's size.
 
 ## Feedback
 
@@ -214,8 +230,11 @@ deployment can relay - the price a "free" endpoint may actually bill, stated bef
 ## `X-Treg-Smoothed` - the call waited for treg's own rate limit
 
 On platform calls, including owned free polling: `wait=<ms>` when the call was spaced behind other callers on the
-same platform key, `retry=1` when a burst-429 with a short `retry-after` was re-sent once (body-less GET/HEAD only). Informational; the status and body are the provider's. See
-`architecture/proxy-model.md` § Burst smoothing.
+same platform key, `retry=1` when a burst-429 with a short `retry-after` was re-sent once (body-less GET/HEAD only),
+`share_wait=<ms>` when the provider's concurrency was fully used and the call waited in line for a place
+(`ops/capacity.md` § fair share). Informational; the status and body are the provider's. See
+`architecture/proxy-model.md` § Burst smoothing. A call that waited too long is refused instead with the
+typed `share_busy` 429 (`retry_after_s`, not charged); a routed job asks its next provider.
 
 ## `X-Treg-Error` - whose refusal is this?
 `bootstrap_handlers._mark_treg_own_errors` tags treg's **own**

@@ -353,10 +353,25 @@ async def test_admission_timeout_preserves_foreign_lease_and_settles_once(
         await local_redis[1].release_lease(key, token)
 
 
+@pytest.mark.parametrize("transient_failure", (False, True))
 async def test_real_redis_renews_a_lease_until_the_database_scope_exits(
-    local_postgres, local_redis, independent_admission_clients,
+    local_postgres, local_redis, independent_admission_clients, monkeypatch, transient_failure,
 ):
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+
     admission, run = independent_admission_clients
+    original = local_redis[0]._client.eval
+    failed = False
+    kv.drain_lease_timings()
+
+    async def once_unavailable(script, *args):
+        nonlocal failed
+        if transient_failure and script == kv._RENEW_LEASE and not failed:
+            failed = True
+            raise RedisTimeoutError("temporary renewal failure")
+        return await original(script, *args)
+
+    monkeypatch.setattr(local_redis[0]._client, "eval", once_unavailable)
     org, [call] = await _funded_holds("admission-renew", 1)
     key = f"money-admission:org:{org}"
     async with admission.admit([org], operation="close"):
@@ -367,6 +382,9 @@ async def test_real_redis_renews_a_lease_until_the_database_scope_exits(
         assert await local_redis[1].acquire_lease(key, "other-process", 3000) == "busy"
         assert await _close(session_maker, org, call) == 70
     assert not await local_redis[1]._client.exists(key)
+    assert sum(row["lease_lost"] for row in admission.snapshot()) == 0
+    assert sum(row["retry_count"] for row in kv.drain_lease_timings()
+               if row["phase"] == "renew") == int(transient_failure)
     await _accounting(org, [call])
 
 

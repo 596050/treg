@@ -548,6 +548,14 @@ expiry alert. A paused upstream would fail every check, and the connection must 
 pause is lifted. No job deletes or disables a connection after failed checks; removal is a user's
 disconnect only.
 
+## treg's own accounts
+
+A provider's tier-4 key is `TREG_PLATFORM_KEY_<PROVIDER>`; a paired half has its own setting
+(`TREG_PLATFORM_KEY_TOMBA_SECRET`). `TREG_PLATFORM_ACCOUNTS` adds more accounts behind a provider as
+JSON from provider to labelled account settings, and a malformed value refuses to start. These
+values live only in the environment: a binding names a setting and, with several accounts, an
+account label, never a value ([proxy model](proxy-model.md)).
+
 ## Storage / security posture (MVP)
 TLS-only in transit (paste/upload over https, like GitHub/Vercel secrets); Fernet at rest. Per-membership
 tokens gate the API (`require_member`, [interface/api.md](../interface/api.md)) and scope every call to an

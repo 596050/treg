@@ -77,6 +77,10 @@ async def test_voice_create_is_private_and_becomes_an_org_resource(
         ("voice-created", "Narrator", "active")
     ]
     assert seen == [("POST", "https://api.fish.audio/model")]
+    async with session_maker() as db:
+        row = (await db.execute(select(ProviderResource).where(
+            ProviderResource.upstream_id == "voice-created"))).scalars().one()
+    assert row.key_slot == "primary", "the voice names the account it lives on"
 
 
 async def test_unified_voice_list_uses_byok_and_normalizes_without_holding_db(

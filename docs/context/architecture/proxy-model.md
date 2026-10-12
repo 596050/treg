@@ -3,6 +3,7 @@ title: The proxy — faithful credential-injecting relay + tool resolution
 status: shipped
 sources:
   - src/treg/infra/upstream/relay.py
+  - src/treg/jsontext.py
   - src/treg/infra/upstream/ssrf.py
   - src/treg/api.py
   - src/treg/application/call/authorize.py
@@ -15,6 +16,9 @@ sources:
   - src/treg/application/call/service.py
   - src/treg/application/call/types.py
   - src/treg/application/asynctasks.py
+  - src/treg/application/call/keyslots.py
+  - src/treg/alembic/versions/0069_platform_key_slot.py
+  - tests/test_platform_accounts.py
   - src/treg/client_identity.py
   - src/treg/call_surface.py
   - src/treg/sandbox_identity.py
@@ -94,6 +98,14 @@ incl. duplicates, headers, cookies, body bytes):
    This is semantic JSON relay, not byte-faithful relay: formatting changes, non-ASCII text is
    emitted as UTF-8, and duplicate keys fail closed. Never use a JSON binding where the upstream
    signs or hashes the caller's raw body bytes.
+
+   **Every JSON re-encode goes through `treg/jsontext.py`.** `json.loads` accepts an escaped lone
+   UTF-16 surrogate (`"\ud835"`, a JavaScript scraper cutting a LinkedIn post mid-pair) and a plain
+   `ensure_ascii=False` dump of it raises after the upstream answered. `dumps`/`dumps_bytes` keep
+   non-ASCII readable and fall back to ASCII escapes only for such a value, so the routed body, the
+   hub's child bodies and `treg --json call` relay the upstream's own escape. MCP is the one lossy
+   surface: the SDK's pydantic serializer cannot write the escape, so `mcp._body` replaces each
+   unpaired surrogate with U+FFFD (paired text is unchanged) rather than lose the paid answer.
 
 > **What treg keeps from a call.** Successes retain no content: the relay forwards bytes and the audit
 > row records status, size and timing. A **failed relayed call** - platform, own-key, or plain own-tool
@@ -406,6 +418,56 @@ A routed call whose outcome is still pending (`202` with `X-Treg-Route-Outcome: 
 `request.state.call_cost_micro` as `None` and skips the `X-Treg-Cost-Micro` response header rather
 than reporting a charge that has not happened yet.
 
+## Several treg-owned accounts behind one provider
+
+`TREG_PLATFORM_ACCOUNTS` adds accounts behind a provider, as JSON from provider to labelled
+accounts: `{"contactout": {"b": {"platform_key_contactout": "..."}}}`. The deployment's own
+`platform_key_<provider>` is the account labelled `primary`, and every reader outside the call path
+(balance collectors, archive refresh, overflow verification) keeps using only it. An account names
+every credential that differs per account. `keyslots.check_accounts` refuses to start the API or
+`treg-worker asynctasks settle` / `hub check` on an account the call path cannot use: one behind a provider whose primary key is
+unset (the primary is the serving switch), a provider without a pasted platform key, or an account
+that omits its provider's paired setting (Tomba's secret, Adyntel's account email). A label,
+never a credential, is what rows, buckets and telemetry (`tool_called.key_slot`) name, so reordering
+the accounts or regenerating one's key changes nothing.
+
+`application/call/keyslots.py` picks the account:
+
+1. A call acting on a task, result or managed resource uses the account that created it.
+   `AsyncTaskRecord`, `AsyncResourceRecord` and `ProviderResource` carry `key_slot`; NULL is a row
+   from before accounts existed and means `primary`. A row whose account is no longer configured is
+   refused with 410 `platform_account_retired` before reserve; the async worker releases such a
+   task's hold at once (the platform absorbs any upstream charge, flagged for reconciliation).
+   Retired means the provider's accounts are configured in this process and that label is not
+   among them; a process holding no further accounts for the provider (or not its primary) answers
+   503 `platform_account_unavailable`, which the worker backs off on, so a worker that lost its
+   environment never releases a task it could poll once restored. A call whose objects live on
+   different accounts is refused with 409 `platform_account_split`.
+2. A call carrying `Idempotency-Key` uses the account the org-scoped key hashes to, so a retry that
+   reaches the provider again lands where the provider can recognise it. Adding or removing an
+   account can move a key. The idempotency claim is no place to remember the account: a failed
+   call deletes its claim, and that is exactly the retry that reaches the provider.
+3. Otherwise an account not out of capacity whose smoothing bucket would wait least; ties rotate
+   per provider. Rules 1 and 2 run during resolution (`pinned`); this one runs right before the
+   relay (`assign`), and the
+   chosen bucket's token is taken with no await between, so a burst that resolved together still
+   spreads over the accounts instead of all reading the same idle one.
+
+A call on any account but the primary carries `account: <provider>/<label>` on its platform
+binding, and the relay injects that account's values or fails `injection_failed` when the account
+is not configured; it never substitutes another account's credential. The primary's credentials are
+the deployment's own fields, so a call on it carries no `account` and smooths in the provider's own
+bucket: a provider with one account behaves exactly as before. Error-body masking covers every
+account's value of the setting.
+
+Capacity is per account. A balance or quota signature strikes and locks only the account that
+answered (`marks.lock_key(..., slot)`: the primary keeps the provider's own key, a further account
+`<key>#<label>`), a 2xx clears only its own account's strikes, and a probe through a lock goes to
+the locked account. A call is refused before reserve only when its pinned account, or every account
+of an open call, is out; `assign` skips accounts that are. The sweep still reads only the primary,
+so a further account's lock lifts at its expiry or through its own probe, and the burst-429 re-send
+stays on the same account.
+
 ## Platform capacity: refuse before reserve (plan step D)
 
 Catalog `platform_request` checks and provider-specific request guards run only after a platform
@@ -465,7 +527,11 @@ refusal:
    then proceeds regardless; the hold is already placed, so the org pays latency, never money. The
    limit comes from the capacity view (`view.rate_limit`: published by the sweep from
    `CapacityPolicy.rate_limit`, with the verified defaults - leadsforge 120/min, leadmagic 300/min,
-   crustdata 30/min, tikhub 30/s - before the first sweep). In-process on purpose: a second replica
+   crustdata 30/min, tikhub 30/s - before the first sweep). An endpoint whose upstream allowance
+   differs from its provider's is its own bucket (`policy._ENDPOINT_RATE_LIMITS`, read through
+   `view.rate_bucket`); it replaces the provider's limit for that route and does not draw from the
+   provider's bucket. Each account other than the primary has its own allowance, so its own
+   bucket (`<key>#<label>`). In-process on purpose: a second replica
    doubles the effective rate, and the `rate_pressure` alert (step C) is the answer to that, not a
    shared counter on the request path.
 2. **One bounded `retry-after` re-send** - on a tier-4 **429** classified `burst` with

@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ... import jsontext
+
 MAX_DEPTH = 3               # a nested object flattens to `a.b.c` columns, no deeper
 MAX_WALK = 4                # how deep the search for lists of objects goes
 RAW_TEXT_BYTES = 64 * 1024  # the most text a `raw` table carries
@@ -59,7 +61,7 @@ def cell(value: Any) -> Any:
         return value
     if isinstance(value, list) and all(v is None or isinstance(v, (bool, int, float, str)) for v in value):
         return ", ".join("" if v is None else str(v) for v in value)
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return jsontext.dumps(value, separators=(",", ":"))
 
 
 def _hidden(key: Any) -> bool:
@@ -303,4 +305,4 @@ def to_table(body: Any, *, contract_output: list[str] | None = None, list_field:
             return from_hub(body, hub_fields)
         return generated(body)
     except Exception:  # noqa: BLE001 - a table is a view; the answer itself was already delivered
-        return raw(json.dumps(body, ensure_ascii=False, default=str))
+        return raw(jsontext.dumps(body, default=str))

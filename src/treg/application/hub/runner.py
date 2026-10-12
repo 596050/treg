@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 import httpx
 from sqlalchemy import select
 
-from ... import audit
+from ... import audit, jsontext
 from ...domain.catalog import store as catalog_store
 from ...domain.hub import graph as hub_graph
 from . import sandbox
@@ -527,7 +527,7 @@ def _entry(step: _Step, outcome: str, status: int | None, ms: int, cost: int, *,
 
 
 def _short(v: Any) -> Any:
-    s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str)
+    s = v if isinstance(v, str) else jsontext.dumps(v, default=str)
     return s[:300]
 
 
@@ -540,7 +540,7 @@ def _child_input(parent: CallContext, call: str, method: str, inp: dict[str, Any
                  extra_query: dict[str, Any] | None = None,
                  extra_headers: dict[str, str] | None = None) -> CallInput:
     has_body = method in ("POST", "PUT", "PATCH")
-    payload = json.dumps(inp, ensure_ascii=False).encode() if has_body else b""
+    payload = jsontext.dumps_bytes(inp) if has_body else b""
     drop = set(_DROP_FROM_CHILD) | {k.lower().encode("latin-1") for k in (extra_headers or {})}
     headers = [(k, v) for k, v in parent.input.raw_headers if k.lower() not in drop]
     headers += [(k.lower().encode("latin-1"), v.encode("latin-1", "replace")) for k, v in (extra_headers or {}).items()
@@ -649,7 +649,7 @@ def _audit_parent(parent: CallContext, tool: HubTool, status: int, charged: int,
 
 
 def _json(value, status: int, headers: dict[str, str]) -> UpstreamResponse:
-    body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+    body = jsontext.dumps_bytes(value, separators=(",", ":"))
 
     async def _one():
         yield body

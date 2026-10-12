@@ -29,7 +29,7 @@ export default function data(){
       editAccess:null, accessDraft:{}, inviteCustomize:false, inviteLocalRun:true, inviteToolSel:{}, accessNote:'',
       // agents (machine identities), projects (sub-scope) and deny rules (policy)
       orgTab:'members', showInvite:false, showAddAgent:false,
-      apiKeys:[], keyName:'', keyNameInvalid:false, keyBusy:false, keyErr:'', keyMsg:null, editKey:null, editKeyName:'', keyMenu:null, keyConfirm:null, activityKey:'',
+      apiKeys:[], apiKeySpend:null, keyName:'', keyNameInvalid:false, keyBusy:false, keyErr:'', keyMsg:null, editKey:null, editKeyName:'', keyMenu:null, keyConfirm:null, activityKey:'',
       agentSnip:'prompt',   // which paste-ready snippet the agent card shows (prompt = hand-to-agent, first)
       snipAgent:null,    // an EXISTING agent whose setup snippets are open (no token — placeholder)
       agents:[], agentName:'', agentRole:'member', agentCap:-1, agentBusy:false, agentErr:'', agentProjSel:{}, agentAccessMode:null, agentToolSel:{},
@@ -39,7 +39,7 @@ export default function data(){
       editProj:null, projToolDraft:{}, projToolBusy:false,
       denyRules:[], denyForm:{host:'',path_prefix:'',method:'',user_id:null,project_id:null,note:''}, denyBusy:false, confirmDeny:null, cliDeny:[],
       bootVersion:'', newVersion:false,
-      usage:null, usageDays:30, myUsage:null, actTab:'feed', buildTab:'vendor',  // Activity page: 'feed' | 'usage'
+      usage:null, usageDays:30, usageSpend:null, usageSpendBusy:false, usageSpendErr:'', spendRange:{preset:30, from:'', to:''}, spendFilter:{group:'day', key:'', provider:'', stack:'key'}, spendRankPage:0, spendRankOpen:false, myUsage:null, actTab:'feed', buildTab:'vendor',  // Activity page: 'feed' | 'usage'
       tagUsage:{}, tagKeys:[],   // spend per X-Treg-Meta key: {customer:{…}, workspace:{…}}
   // usage-metering: rollups + the member's own used/cap
       // Billing (Stripe top-ups). `billing` null = not loaded / not an admin; billing.configured
