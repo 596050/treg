@@ -324,6 +324,24 @@ counted separately and are not a successful rollout. Owner-checked renewal and d
 or deleting a newer owner's lease. TTL and renewal cannot prove that an old database transaction
 has stopped, which is why database locks remain necessary.
 
+Renewal retries a transient timeout/connection failure once with the same owner-checked
+`PEXPIRE`: it cannot recreate an expired key or extend a successor's token. Each attempt has
+a 200 ms cooperative deadline within a shared 400 ms budget. The gate passes the earliest
+confirmed expiry of all held leases into `renew_lease`, which checks this absolute deadline
+before each EVAL and caps each attempt's timeout by the remaining budget. A late transient
+error or a timeout translated by driver cleanup cannot start another attempt after that deadline;
+these checks cannot preempt an already-running command or a scheduling pause.
+Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
+counts validity from each acquire/renew request's start, not its reply; after a scheduling pause
+it checks this deadline before renewing or entering the session. A renewal reply observed after
+the previous deadline marks isolation lost even if Redis accepted the extension. It never
+reacquires, cancels the transaction or releases the local gate before session cleanup. Failed
+attempts remain in the existing KV diagnostics even when the retry recovers.
+Confirmed validity exhausted before an attempt, by its validity timeout, or by the gate's outer
+timeout reports `deadline_expired`, not KV unavailability. The admission summary counts it once
+per scope alongside `lease_lost`, without increasing `kv_errors`. Actual command failures still
+retain their diagnostic rows if the validity deadline also expires during failure cleanup.
+
 Lease cleanup retries a transient timeout/connection failure at most once, always with the same
 token-checked Lua delete. Each attempt keeps its 200 ms deadline within a shared 400 ms per-key
 budget; authentication/permission errors and cancellation do not retry. These are asyncio time
@@ -333,7 +351,7 @@ A retry finding no matching token reports `not_owned`: an earlier delete may hav
 without its response, or the lease expired/changed owners. It cannot delete a replacement owner's
 lease and does not manufacture a new lease-loss observation. Repeated failures leave expiry as
 the backstop. Cleanup still follows database session closure and never repeats accounting or
-upstream work. The admission acquisition budget remains five seconds; cleanup is observed
+upstream work. The admission acquisition budget still defaults to five seconds; cleanup is observed
 separately from execution in the existing scope totals.
 
 This is best-effort contention isolation, not a global money concurrency cap, durable queue or

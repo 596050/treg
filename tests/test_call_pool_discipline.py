@@ -31,6 +31,7 @@ from treg.application.call import service as call_service
 from treg.routers import call as call_routes
 from treg import audit
 from treg.domain import money as ledger
+from treg.domain.identity import api_keys as managed_keys
 from treg.config import get_settings
 from treg.infra.db import _background_engine, _engine, session_maker
 from treg.infra.upstream.relay import relay as upstream_relay
@@ -81,6 +82,8 @@ async def test_an_own_key_call_holds_no_db_connection_while_upstream_is_called(
     second session to deadlock against — it just eats a slot per in-flight call for nothing."""
     await clients.post("/secrets", json={"name": "tikhub", "value": "MKKEY"})
     await audit.drain()
+    # Creating the secret schedules a last-used write on SQLite's shared pool.
+    await managed_keys.drain_last_used()
     seen: list[int] = []
     monkeypatch.setattr(call_service, "relay", _relay_that_checks_the_pool(seen))
     r = await clients.get(f"/call/{EP}?aweme_id=7")

@@ -635,10 +635,16 @@ events or org/call IDs in these aggregates.
 Elapsed time is client-observed, including connection setup and event-loop scheduling, not Redis
 server execution time. A type narrows the failing boundary; it does not establish a network or
 server root cause by itself. Normal contention and task cancellation are not lease errors.
-Counts describe failed command attempts, including a first release attempt that a retry recovers;
-they are not counts of failed money transactions or failed release scopes.
-Admission's release `kv_errors` increments only if cleanup ultimately returns unavailable; an
-error followed by a successful retry still appears in attempt diagnostics, but not that counter.
+Counts describe failed command attempts, including a first renewal or release attempt that a retry
+recovers; they are not counts of failed money transactions or failed lease scopes.
+Admission's renewal/release `kv_errors` increments only for terminal unavailability or an unexpected
+store exception. A recovered failed attempt still appears in diagnostics, but not that counter.
+Confirmed lease validity exhaustion is counted separately as `deadline_expired` once per admission
+scope, alongside `lease_lost`. This includes expiry noticed before renewal, a `deadline_expired`
+store result, a late renewal reply, and the gate's own validity timeout. A store-raised timeout
+before validity expires remains a KV error. Actual command failures remain in attempt diagnostics
+even when validity expires during failure cleanup. These scope counts reach the existing
+`money_admission_gauge` logs and analytics; expiry before a command sends no fictitious attempt.
 
 `MoneyTraceRunner._emit` drains these buckets on its existing minute cadence and at shutdown,
 before its local sink closes. The existing bounded background log sink adds build/process/role
@@ -648,12 +654,14 @@ the runner's existing loss/error counters; the absence of a detail log is not pr
 The existing `money_admission_gauge` KV/fallback counters remain the independent aggregate signal.
 
 `kv_lease_gauge` reuses the same minute/worker-exit runner for local logs and PostHog. Each actual
-lease command attempt increments an in-memory bucket by phase and fixed outcome; at most 13
+lease command attempt increments an in-memory bucket by phase and fixed outcome; at most 14
 buckets exist per process. Each summary holds `count`, `retry_count`, `elapsed_total_ms`,
 `elapsed_max_ms` and disjoint duration buckets (up to 10, 50, 100, 200 ms, or above 200 ms), with
-build/process/role, window duration and shutdown metadata. `retry_count` counts second release
+build/process/role, window duration and shutdown metadata. `retry_count` counts second renewal/release
 attempts, including failed or cancelled ones. `unavailable` denotes a failed attempt; the local
-`kv_lease_error` supplies its error class. `not_owned` means a release retry found no matching
+`kv_lease_error` supplies its error class. `deadline_expired` denotes a renewal attempt stopped by
+its confirmed-validity timeout, without a KV error. An outer gate timeout can instead cancel the
+command (`cancelled`), while its admission summary records `deadline_expired`. `not_owned` means a release retry found no matching
 token: the earlier delete may have succeeded without a reply, or the lease expired/changed owner.
 It is neither proof of renewed ownership nor a new `lease_lost` observation. Previously detected
 renewal loss remains recorded. Normal `busy` attempts and cancellations have distinct outcomes.
