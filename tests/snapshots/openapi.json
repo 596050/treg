@@ -13503,6 +13503,162 @@
         "summary": "Usage By Tag"
       }
     },
+    "/orgs/{org_id}/usage/spend": {
+      "get": {
+        "description": "The team's billed spend between two UTC days (`from`..`to`, YYYY-MM-DD; default the last 30\ndays), bucketed by day, week or month and stacked by API key or, within one provider, by tool\n(admin/owner). Read only from the daily spend rollup, never the ledger or the audit table, so\nthe range starts no earlier than the rollup's `history_from`. `ready` is false, with no\nnumbers, until the rollup has caught up once.",
+        "operationId": "usage_spend_orgs__org_id__usage_spend_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "title": "Org Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "title": "Group",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stack",
+            "required": false,
+            "schema": {
+              "default": "key",
+              "title": "Stack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-treg-token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Treg-Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-treg-org",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Treg-Org",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "treg_session",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Treg Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Usage Spend Orgs  Org Id  Usage Spend Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Usage Spend"
+      }
+    },
     "/referrals": {
       "get": {
         "description": "This person's referral link and everyone who has used it.\n\nAlso runs the payout sweep, scoped to this user. There is no scheduler in treg, so the two\ntrigger points are any top-up (`billing._credit`) and this page — which means someone checking\nwhether their reward has landed is the one who makes it land. That is the same lazy,\ncaller-pays-for-their-own-cleanup bargain as `ledger.reap_stale_holds`.",

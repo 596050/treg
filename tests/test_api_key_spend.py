@@ -8,9 +8,11 @@ large the team.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import event
 
 from treg import crypto
@@ -123,3 +125,99 @@ async def test_a_large_team_is_a_small_bounded_read_of_the_rollup(clients):
     touched = [s for s in seen if "apikeyspend" in s]
     assert len(touched) == 2      # the cursor, then one grouped read of the rollup
     assert not [s for s in seen if "ledgerentry" in s or "callrecord" in s]
+
+
+# The Usage page's spend chart: `GET /orgs/{id}/usage/spend`, read from the same rollup.
+
+async def test_the_chart_buckets_stacks_and_folds_from_the_rollup(clients):
+    org_id = (await clients.get("/auth/me")).json()["org_id"]
+    keys = [(await clients.post(f"/orgs/{org_id}/api-keys", json={"name": f"K{i}"})).json()["id"] for i in range(10)]
+    async with session_maker() as db:
+        other = Org(name="Other", slug="other-chart")
+        db.add(other)
+        await db.commit()
+    await _caught_up()
+    await _add(
+        *[_row(org_id, 1, key, 1_000 * (i + 1)) for i, key in enumerate(keys)],
+        _row(org_id, 2, keys[9], 500, "tavily.search", charges=3),
+        _row(org_id, 2, rollup.NOT_ATTRIBUTED, 50_000),
+        _row(org_id, 40, keys[0], 9_999_999),                   # before the rollup's history
+        _row(other.id, 1, keys[0], 777_777),                     # another team's money
+    )
+
+    got = (await clients.get(f"/orgs/{org_id}/usage/spend")).json()
+    assert got["ready"] and got["history_from"] == _day(30) and got["from"] == _day(29) and got["to"] == _day(0)
+    assert got["spent_micro"] == 55_000 + 50_000 + 500 and got["charges"] == 14
+    # The biggest seven keep their own series; the other four fold into Other.
+    assert [s["id"] for s in got["series"]] == ["none", str(keys[9]), *[str(k) for k in keys[8:3:-1]], "__other"]
+    assert got["series"][-1] == {"id": "__other", "name": "Other", "spent_micro": 10_000, "members": 4}
+    assert len({s["slot"] for s in got["series"][:-1]}) == 7
+    assert len(got["ranking"]) == 11 and got["ranking"][0]["name"] == "No API key"
+    yesterday = next(b for b in got["buckets"] if b["start"] == _day(1))
+    assert yesterday["parts"]["__other"] == 10_000 and yesterday["charges"] == 10
+    assert 777_777 not in [s["spent_micro"] for s in got["series"]]
+
+    # Asked from further back than the rollup holds: the range starts at its history.
+    old = (await clients.get(f"/orgs/{org_id}/usage/spend?from={_day(90)}&to={_day(0)}&group=month")).json()
+    assert old["from"] == _day(30) and old["spent_micro"] == got["spent_micro"]
+
+    # One provider, stacked by tool, one key: filters narrow the money, never the options.
+    tools = (await clients.get(f"/orgs/{org_id}/usage/spend?provider=tavily&stack=tool&key={keys[9]}")).json()
+    assert tools["spent_micro"] == 500 and tools["charges"] == 3
+    assert [s["id"] for s in tools["series"]] == ["tavily.search"]
+    assert {p["id"] for p in tools["options"]["providers"]} == {"exa", "tavily"}
+    assert len(tools["options"]["keys"]) == 10
+
+    assert (await clients.get(f"/orgs/{org_id}/usage/spend?stack=tool")).status_code == 422
+    member = await _member(org_id, "chart-member@example.dev")
+    assert (await clients.get(f"/orgs/{org_id}/usage/spend", headers=_h(member))).status_code == 403
+    assert (await clients.get(f"/orgs/{other.id}/usage/spend")).status_code == 403
+
+
+async def test_the_chart_waits_for_the_rollup(clients):
+    org_id = (await clients.get("/auth/me")).json()["org_id"]
+    assert (await clients.get(f"/orgs/{org_id}/usage/spend")).json() == {"ready": False, "history_from": None}
+
+
+async def test_the_chart_for_a_large_team_is_a_small_bounded_read_of_the_rollup(clients):
+    org_id = (await clients.get("/auth/me")).json()["org_id"]
+    await _caught_up()
+    keys, tools, days = 120, 6, 31
+    await _add(*[_row(org_id, d, k, 10 + k, f"tool{t}.x")
+                 for k in range(1, keys + 1) for t in range(tools) for d in range(days)])
+
+    with _statements() as seen:
+        got = (await clients.get(f"/orgs/{org_id}/usage/spend?from={_day(30)}")).json()
+
+    assert len(got["ranking"]) == keys and len(got["series"]) == 8
+    assert all(len(b["parts"]) == 8 for b in got["buckets"])
+    assert got["spent_micro"] == sum(10 + k for k in range(1, keys + 1)) * tools * days
+    touched = [s for s in seen if "apikeyspend" in s]
+    assert len(touched) == 5      # the cursor, key totals, tool totals, series totals, folded buckets
+    assert not [s for s in seen if "ledgerentry" in s or "callrecord" in s]
+
+
+def test_color_slots_never_spins_with_more_ids_than_slots():
+    from treg.application import key_spend
+    for ids in (["none", *map(str, range(1, 20))], [f"tool{i}.x" for i in range(30)], ["7"] * 3 + ["14", "21"]):
+        slots = key_spend.color_slots(ids)
+        assert len(slots) <= key_spend.MAX_SERIES
+        assert len(set(slots.values())) == len(slots)
+        assert set(slots.values()) <= set(range(key_spend.MAX_SERIES))
+
+
+@pytest.mark.parametrize("n, kept, folded", [(7, 7, 0), (8, 7, 1), (9, 7, 2)])
+async def test_the_chart_keeps_seven_series_and_folds_the_rest_even_one(clients, n, kept, folded):
+    org_id = (await clients.get("/auth/me")).json()["org_id"]
+    await _caught_up()
+    # Key ids 7, 14, 21, ... all prefer the same color slot: the case that once spun forever.
+    await _add(*[_row(org_id, 1, 7 * (i + 1), 1_000 * (i + 1)) for i in range(n)])
+
+    got = (await asyncio.wait_for(clients.get(f"/orgs/{org_id}/usage/spend"), timeout=10)).json()
+
+    own = [s for s in got["series"] if s["id"] != "__other"]
+    other = [s for s in got["series"] if s["id"] == "__other"]
+    assert len(own) == kept and len({s["slot"] for s in own}) == kept
+    assert [o["members"] for o in other] == ([folded] if folded else [])
+    assert len(got["ranking"]) == n
+    assert all(len(b["parts"]) <= 8 for b in got["buckets"])

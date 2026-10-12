@@ -2,7 +2,7 @@
 
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from .. import analytics, crypto, email as email_sender, health, localrun
+from .. import oauth_providers
 from .. import providers as _providers
+from ..application import key_spend
 from ..application.onboard import demo as demo_seed
 from ..application import archive_erasure
 from ..application import signup as signup_use_cases
@@ -1279,6 +1281,47 @@ async def org_usage(
     days = max(1, min(days, 365))
     since = _day_start_utc() - timedelta(days=days - 1)  # inclusive of today + the prior days-1
     return {"days": days, "since": since.isoformat(), **await _usage_rollup(db, org_id, since)}
+
+
+@app.get("/orgs/{org_id}/usage/spend")
+async def usage_spend(
+    org_id: int,
+    from_: str | None = Query(default=None, alias="from"), to: str | None = None,
+    group: str = "day", key: int | None = None, provider: str | None = None, stack: str = "key",
+    caller: Caller = Depends(require_member), db: AsyncSession = Depends(get_session),
+) -> dict:
+    """The team's billed spend between two UTC days (`from`..`to`, YYYY-MM-DD; default the last 30
+    days), bucketed by day, week or month and stacked by API key or, within one provider, by tool
+    (admin/owner). Read only from the daily spend rollup, never the ledger or the audit table, so
+    the range starts no earlier than the rollup's `history_from`. `ready` is false, with no
+    numbers, until the rollup has caught up once."""
+    _require_admin_of(org_id, caller)
+    if group not in key_spend.GROUPS:
+        raise HTTPException(status_code=422, detail="group is day, week or month")
+    if stack not in ("key", "tool"):
+        raise HTTPException(status_code=422, detail="stack is key or tool")
+    if stack == "tool" and not provider:
+        raise HTTPException(status_code=422, detail="stack by tool needs a provider")
+    today = _day_start_utc().date()
+    try:
+        last = min(date.fromisoformat(to) if to else today, today)
+        first = date.fromisoformat(from_) if from_ else key_spend.first_day(last, key_spend.WINDOW_DAYS)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="from and to are dates: YYYY-MM-DD")
+    if first > last:
+        raise HTTPException(status_code=422, detail="from must not be after to")
+    state = await key_spend.history(db)
+    if not state["ready"]:
+        return {"ready": False, "history_from": state["history_from"]}
+    first = max(first, date.fromisoformat(state["history_from"]))
+    if first > last:   # a range wholly before the history: an empty chart of its last day
+        first = last
+    report = await key_spend.spend_report(db, org_id, first, last, group=group, key_id=key,
+                                          provider=provider or None, stack=stack)
+    for option in report["options"]["providers"]:
+        known = oauth_providers.get(option["id"])
+        option["name"] = known.display_name if known else option["id"]
+    return {"ready": True, "history_from": state["history_from"], **report}
 
 
 app = APIRouter()

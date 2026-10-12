@@ -91,6 +91,14 @@ the team's `unattributed` line (charges with no keyed audit row) is admin+ and `
 `ready` is false, with no numbers, until the rollup has caught up once. `charges` counts settle
 entries, not calls.
 
+`GET /orgs/{id}/usage/spend` (admin+) is the Usage page's spend chart, from the same rollup only:
+`from`/`to` (UTC days, default the last 30), `group` (`day`, `week`, `month`), `stack` (`key`, or
+`tool` with a `provider`), and optional `key` and `provider` filters. The range starts no earlier
+than the rollup's `history_from`. The biggest seven series keep their own color slot and the rest
+fold into one Other, so a bucket has at most eight parts; `ranking` lists every series and
+`options` the keys and providers before any filter. Four grouped reads of the rollup, whatever the
+team's size.
+
 ## Feedback
 
 `routers.feedback` owns authenticated `POST /feedback`, team-scoped `GET /feedback/{feedback_id}`,
