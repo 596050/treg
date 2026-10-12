@@ -16,7 +16,7 @@ from ...infra.db import session_maker
 from ...models import Ephemeral
 from ...timeutil import utcnow_naive
 from .marks import LOCK_NS, Lock
-from .policy import _CONCURRENCY, _RATE_LIMITS, LatestState
+from .policy import _CONCURRENCY, _ENDPOINT_RATE_LIMITS, _RATE_LIMITS, LatestState
 from .sweep import STATE_NS
 
 TTL_S = 60.0
@@ -64,14 +64,22 @@ class LatestStateView:
         state = self._states.get(provider)
         return state.exhausted_until if state and state.is_exhausted() else None
 
+    def rate_bucket(self, provider: str, endpoint_id: str | None) -> tuple[str, int, float] | None:
+        """(bucket key, limit, window_s) smoothing this platform call, or None when unknown. An
+        endpoint with its own allowance (`_ENDPOINT_RATE_LIMITS`) is its own bucket; every other
+        endpoint shares the provider's. Sync, I/O-free."""
+        pair = _pair(_ENDPOINT_RATE_LIMITS.get(endpoint_id or ""))
+        if pair:
+            return endpoint_id, *pair
+        pair = self.rate_limit(provider)
+        return (provider, *pair) if pair else None
+
     def rate_limit(self, provider: str) -> tuple[int, float] | None:
         """(limit, window_s) for the provider's platform key, or None when unknown. Published by the
         sweep from the policy; the verified defaults apply before a sweep has run. Sync, I/O-free."""
         state = self._states.get(provider)
-        rl = (state.rate_limit if state and state.rate_limit else None) or _RATE_LIMITS.get(provider)
-        if not rl or not rl.get("limit") or not rl.get("window_s"):
-            return None
-        return int(rl["limit"]), float(rl["window_s"])
+        return _pair((state.rate_limit if state and state.rate_limit else None)
+                     or _RATE_LIMITS.get(provider))
 
     def concurrency(self, provider: str) -> int:
         """Calls in progress the provider allows on its platform key, or 0 when unknown (no gate)."""
@@ -79,6 +87,13 @@ class LatestStateView:
 
     def invalidate(self) -> None:
         self._loaded_at = -1.0
+
+
+def _pair(rl: dict | None) -> tuple[int, float] | None:
+    """A rate-limit row as (limit, window_s), or None when it does not state both."""
+    if not rl or not rl.get("limit") or not rl.get("window_s"):
+        return None
+    return int(rl["limit"]), float(rl["window_s"])
 
 
 view = LatestStateView()
