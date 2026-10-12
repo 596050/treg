@@ -142,7 +142,59 @@ async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, t
 async def test_a_busy_account_hands_the_next_call_to_an_idle_one(two_tikhub_accounts):
     await limiter.acquire(*keyslots.rate_bucket("tikhub", EP, PRIMARY_SLOT))
     for _ in range(4):  # the primary's token is spent; "b" has one
-        assert keyslots.least_loaded("tikhub", EP) == "b"
+        assert _assigned() == "b"
+
+
+def _assigned() -> str:
+    from treg.application.call.resolve import MarketplaceCall
+    mk = MarketplaceCall(tool=Tool(org_id=1, name=EP, owner="t", base_url="", host="", bindings=[]),
+                         upstream="", consumed=set(), endpoint_id=EP, provider="tikhub", tier="platform")
+    keyslots.assign(mk)
+    return mk.key_slot
+
+
+def test_ties_rotate_per_provider(two_tikhub_accounts):
+    """Another provider's calls interleaving must not pin this one to the same account."""
+    picks = []
+    for _ in range(6):
+        picks.append(_assigned())
+        next(keyslots._rotation.setdefault("hunter", __import__("itertools").count()))
+    assert set(picks) == {PRIMARY_SLOT, "b"}
+
+
+async def test_an_account_out_of_capacity_is_skipped_and_kept_out(clients: AsyncClient, two_tikhub_accounts,
+                                                                monkeypatch):
+    """Account b runs dry: its lock is its own, the primary keeps serving, and the primary's 2xx
+    does not clear b's strikes."""
+    from treg.domain.capacity import marks
+    from treg.domain.capacity.view import view as capacity_view
+    for _ in range(2):
+        await marks.strike("tikhub", endpoint_id=EP, kind="balance", resets_at=None, slot="b",
+                           immediate=True)
+    await capacity_view.load(force=True)
+    assert keyslots.exhausted("tikhub", EP, "b") and not keyslots.exhausted("tikhub", EP, PRIMARY_SLOT)
+    seen: list[str] = []
+
+    def upstream(request):
+        seen.append(request.headers["authorization"])
+        return _dropleads_response(200, {"comments": []})
+
+    async with AsyncClient(transport=httpx.MockTransport(upstream)) as vendor:
+        monkeypatch.setattr(A.app.state, "http", vendor)
+        for i in range(3):
+            assert (await clients.get(f"/call/{EP}?aweme_id={i}")).status_code == 200
+    assert set(seen) == {"Bearer PLATFORM-TIKHUB-KEY"}
+    await capacity_view.load(force=True)
+    assert keyslots.exhausted("tikhub", EP, "b"), "the primary's answers are not b's recovery"
+
+
+def test_a_malformed_accounts_value_never_echoes_a_credential():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError) as bad:
+        _settings(platform_accounts='{"tikhub": {"B": {"platform_key_tikhub": "sk_test_123"}}}')
+    assert "sk_test_123" not in str(bad.value)
+    assert "sk_test_123" not in repr(_settings(
+        platform_key_tikhub="P", platform_accounts=json.dumps(ACCOUNTS)).platform_slots("tikhub"))
 
 
 async def test_a_burst_arriving_together_spreads_over_the_accounts(

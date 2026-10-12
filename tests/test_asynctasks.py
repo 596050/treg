@@ -160,6 +160,19 @@ async def test_a_task_on_a_retired_account_releases_its_hold_at_once(
         row = await db.get(AsyncTaskRecord, call_id)
         row.key_slot = "retired"
         await db.commit()
+    # This process holds no further replicate accounts at all: more likely a worker that lost its
+    # environment than a retirement, so the row backs off and keeps its hold.
+    await task_app.settle_due()
+    async with session_maker() as db:
+        row = await db.get(AsyncTaskRecord, call_id)
+        assert row.status == asynctasks.PENDING and await db.get(Hold, call_id) is not None
+        row.next_check_at = utcnow_naive() - timedelta(seconds=1)
+        row.error = ""
+        await db.commit()
+    # Its accounts are configured, and "retired" is not among them: final.
+    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(
+        {"replicate": {"b": {"platform_key_replicate": "test-platform-token-b"}}}))
+    get_settings.cache_clear()
     await task_app.settle_due()
     async with session_maker() as db:
         row = await db.get(AsyncTaskRecord, call_id)

@@ -425,7 +425,7 @@ accounts: `{"contactout": {"b": {"platform_key_contactout": "..."}}}`. The deplo
 `platform_key_<provider>` is the account labelled `primary`, and every reader outside the call path
 (balance collectors, archive refresh, overflow verification) keeps using only it. An account names
 every credential that differs per account. `keyslots.check_accounts` refuses to start the API or
-`treg-worker` on an account the call path cannot use: one behind a provider whose primary key is
+`treg-worker asynctasks settle` / `hub check` on an account the call path cannot use: one behind a provider whose primary key is
 unset (the primary is the serving switch), a provider without a pasted platform key, or an account
 that omits its provider's paired setting (Tomba's secret, Adyntel's account email). A label,
 never a credential, is what rows, buckets and telemetry (`tool_called.key_slot`) name, so reordering
@@ -437,14 +437,19 @@ the accounts or regenerating one's key changes nothing.
    `AsyncTaskRecord`, `AsyncResourceRecord` and `ProviderResource` carry `key_slot`; NULL is a row
    from before accounts existed and means `primary`. A row whose account is no longer configured is
    refused with 410 `platform_account_retired` before reserve; the async worker releases such a
-   task's hold at once (the platform absorbs any upstream charge, flagged for reconciliation). A
-   call whose objects live on different accounts is refused with 409 `platform_account_split`.
+   task's hold at once (the platform absorbs any upstream charge, flagged for reconciliation).
+   Retired means the provider's accounts are configured in this process and that label is not
+   among them; a process holding no further accounts for the provider (or not its primary) answers
+   503 `platform_account_unavailable`, which the worker backs off on, so a worker that lost its
+   environment never releases a task it could poll once restored. A call whose objects live on
+   different accounts is refused with 409 `platform_account_split`.
 2. A call carrying `Idempotency-Key` uses the account the org-scoped key hashes to, so a retry that
    reaches the provider again lands where the provider can recognise it. Adding or removing an
    account can move a key. The idempotency claim is no place to remember the account: a failed
    call deletes its claim, and that is exactly the retry that reaches the provider.
-3. Otherwise the account whose smoothing bucket would wait least; ties rotate. Rules 1 and 2 run
-   during resolution (`pinned`); this one runs right before the relay (`least_loaded`), and the
+3. Otherwise an account not out of capacity whose smoothing bucket would wait least; ties rotate
+   per provider. Rules 1 and 2 run during resolution (`pinned`); this one runs right before the
+   relay (`assign`), and the
    chosen bucket's token is taken with no await between, so a burst that resolved together still
    spreads over the accounts instead of all reading the same idle one.
 
@@ -455,8 +460,13 @@ the deployment's own fields, so a call on it carries no `account` and smooths in
 bucket: a provider with one account behaves exactly as before. Error-body masking covers every
 account's value of the setting.
 
-Capacity is still per provider: a balance or quota signature on one account locks the provider for
-all of them, the sweep reads only the primary, and the burst-429 re-send stays on the same account.
+Capacity is per account. A balance or quota signature strikes and locks only the account that
+answered (`marks.lock_key(..., slot)`: the primary keeps the provider's own key, a further account
+`<key>#<label>`), a 2xx clears only its own account's strikes, and a probe through a lock goes to
+the locked account. A call is refused before reserve only when its pinned account, or every account
+of an open call, is out; `assign` skips accounts that are. The sweep still reads only the primary,
+so a further account's lock lifts at its expiry or through its own probe, and the burst-429 re-send
+stays on the same account.
 
 ## Platform capacity: refuse before reserve (plan step D)
 

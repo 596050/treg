@@ -9,13 +9,15 @@ A provider can sit behind several treg-owned accounts (`TREG_PLATFORM_ACCOUNTS`,
 2. A call carrying an Idempotency-Key uses the account the key hashes to, so a retry that reaches
    the provider again lands where the provider can recognise it. Adding or removing an account can
    move a key; a retry across that change is a new request to the provider.
-3. Otherwise the account whose rate bucket would make the call wait least; ties rotate. This one
+3. Otherwise an account not out of capacity whose rate bucket would make the call wait least; ties
+   rotate per provider. This one
    is chosen right before the relay, not during resolution, so the choice and the token it takes
    happen in one step.
 
 The primary account's credentials are the deployment's own fields, so a call on it carries no
 account and smooths in the provider's own bucket: a provider with one account behaves as before.
-Sync and I/O-free: resolution calls `pinned` while it still holds its session.
+Capacity is per account: each further account has its own locks (`capacity_slot`); the sweep
+reads only the primary. Sync and I/O-free: resolution calls `pinned` while it holds its session.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from ...domain.capacity.view import view as capacity_view
 from ...infra.upstream.limiter import limiter
 from .types import ResolutionFailed
 
-_rotation = itertools.count()
+_rotation: dict[str, itertools.count] = {}  # per provider: one provider's calls never skew another's
 
 
 def check_accounts() -> None:
@@ -52,11 +54,16 @@ def check_accounts() -> None:
                 raise RuntimeError(f"TREG_PLATFORM_ACCOUNTS {service}/{slot.slot} must name {paired}")
 
 
+def _labels(service: str) -> list[str]:
+    """The provider's account labels, the primary first. A provider with no key at all answers
+    `primary`, and the relay refuses the injection."""
+    return [s.slot for s in get_settings().platform_slots(service)] or [PRIMARY_SLOT]
+
+
 def pinned(service: str, *, owners: tuple[str | None, ...] = (), idempotency_key: str = "") -> str | None:
-    """The account this call must use, or None when any account may serve it (`least_loaded`
-    picks one right before the relay). `owners` are the key slots of the rows the call acts on. A
-    provider with no key at all answers `primary`, and the relay refuses the injection."""
-    slots = [s.slot for s in get_settings().platform_slots(service)] or [PRIMARY_SLOT]
+    """The account this call must use, or None when any account may serve it (`assign` picks one
+    right before the relay). `owners` are the key slots of the rows the call acts on."""
+    slots = _labels(service)
     if owners:
         wanted = {owner or PRIMARY_SLOT for owner in owners}
         if len(wanted) > 1:
@@ -66,10 +73,20 @@ def pinned(service: str, *, owners: tuple[str | None, ...] = (), idempotency_key
                             "and no one account holds them all; nothing was charged"),
             })
         if not wanted <= set(slots):
-            raise ResolutionFailed("platform_account_retired", status_code=410, detail={
-                "error": "platform_account_retired",
-                "message": (f"this {service} object was created on a treg account that can no longer "
-                            "serve it; nothing was charged"),
+            settings = get_settings()
+            if settings.platform_slots(service) and service in settings.platform_extra_accounts():
+                raise ResolutionFailed("platform_account_retired", status_code=410, detail={
+                    "error": "platform_account_retired",
+                    "message": (f"this {service} object was created on a treg account that can no "
+                                "longer serve it; nothing was charged"),
+                })
+            # This process holds no further accounts for the provider at all, or not even its
+            # primary: more likely an environment that lost them than an account an operator
+            # retired, so it is not final (the async worker retries rather than releasing).
+            raise ResolutionFailed("platform_account_unavailable", status_code=503, detail={
+                "error": "platform_account_unavailable",
+                "message": (f"the treg account that holds this {service} object is not configured "
+                            "here right now; nothing was charged, retry later"),
             })
         return wanted.pop()
     if len(slots) == 1:
@@ -80,18 +97,39 @@ def pinned(service: str, *, owners: tuple[str | None, ...] = (), idempotency_key
     return None
 
 
-def least_loaded(service: str, endpoint_id: str) -> str:
-    """The account whose smoothing bucket would wait least, ties rotating. The caller takes that
-    bucket's token before it next awaits, so a burst arriving together spreads instead of every
-    call reading the same idle account."""
-    slots = [s.slot for s in get_settings().platform_slots(service)]
-    start = next(_rotation) % len(slots)
-    return min(slots[start:] + slots[:start], key=lambda slot: _wait_s(service, endpoint_id, slot))
+def capacity_slot(slot: str | None) -> str | None:
+    """How the capacity domain names an account: the primary is the provider's own account (its
+    buckets, locks and sweep reading carry no suffix), a further account is its label."""
+    return None if slot in (None, PRIMARY_SLOT) else slot
+
+
+def exhausted(service: str, endpoint_id: str, slot: str | None) -> bool:
+    return capacity_view.is_exhausted(service, endpoint_id, capacity_slot(slot))
+
+
+def all_exhausted(service: str, endpoint_id: str) -> bool:
+    """No account of the provider can serve this endpoint now."""
+    return all(exhausted(service, endpoint_id, slot) for slot in _labels(service))
+
+
+def assign(mk) -> None:
+    """Give a platform call that resolution left open (`mk.key_slot is None`) its account: the
+    one not out of capacity whose smoothing bucket would wait least, ties rotating per provider.
+    The caller takes that bucket's token before it next awaits, so a burst arriving together
+    spreads instead of every call reading the same idle account."""
+    if mk.key_slot is not None:
+        return
+    slots = [slot for slot in _labels(mk.provider) if not exhausted(mk.provider, mk.endpoint_id, slot)]
+    slots = slots or _labels(mk.provider)
+    start = next(_rotation.setdefault(mk.provider, itertools.count())) % len(slots)
+    mk.key_slot = min(slots[start:] + slots[:start],
+                      key=lambda slot: _wait_s(mk.provider, mk.endpoint_id, slot))
+    mk.tool.bindings = oauth_providers.platform_bindings(oauth_providers.get(mk.provider), mk.key_slot)
 
 
 def rate_bucket(service: str, endpoint_id: str, slot: str | None) -> tuple[str, int, float] | None:
-    """The smoothing bucket of this account. The primary smooths in the provider's own bucket."""
-    return capacity_view.rate_bucket(service, endpoint_id, None if slot == PRIMARY_SLOT else slot)
+    """The smoothing bucket of this account."""
+    return capacity_view.rate_bucket(service, endpoint_id, capacity_slot(slot))
 
 
 def _wait_s(service: str, endpoint_id: str, slot: str) -> float:

@@ -249,9 +249,10 @@ Scope: treg-owned platform credentials only. Tiers 1/2 (a caller's own tool or k
 consulted or affected by anything here.
 
 A provider can have several treg-owned accounts (`TREG_PLATFORM_ACCOUNTS`, see
-`architecture/proxy-model.md`). Smoothing keeps one bucket per account. Everything else here is
-still per provider: policies, the sweep and balance collectors read only the primary account, and a
-call-path lock on one account's balance or quota signature refuses the provider on all of them.
+`architecture/proxy-model.md`). Smoothing buckets and call-path locks are per account: the primary
+keeps the provider's own keys, a further account's are suffixed `#<label>`, and the provider is out
+only when every account is. Policies, the sweep and balance collectors still read only the primary,
+so a further account's balance is not observed and its lock lifts at expiry or by its own probe.
 
 MillionVerifier's platform slot has an acknowledged exhaustion-signature gap in
 `tests/test_capacity_overflow_routes.py::_UNRECORDED_SIGNATURE`: no verified exhaustion response is

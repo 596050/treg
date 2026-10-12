@@ -65,6 +65,7 @@ _BLAME_BY_KIND: dict[str, Blame] = {
     "injection_failed": "treg",
     "platform_account_retired": "treg",
     "platform_account_split": "treg",
+    "platform_account_unavailable": "treg",
     "ssrf_refused": "treg",
     "connect_failed": "upstream",
     "read_timeout": "upstream",

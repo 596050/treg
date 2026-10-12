@@ -511,9 +511,8 @@ def _reset_call_path_caches():
         try:
             from treg.infra.upstream.limiter import limiter
             limiter.reset()
-            import itertools
             from treg.application.call import keyslots
-            keyslots._rotation = itertools.count()
+            keyslots._rotation.clear()
         except ImportError:
             pass
         # The shared store's in-process fallback (the review-invitation budget): org ids restart

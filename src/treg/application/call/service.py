@@ -1238,10 +1238,7 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 # the cap it proceeds as before; nothing is ever refused here.
                 # The account, when resolution left it open, is picked here and its token taken
                 # below with no await between: a burst arriving together spreads over the accounts.
-                if mk.key_slot is None:
-                    mk.key_slot = keyslots.least_loaded(mk.provider, mk.endpoint_id)
-                    mk.tool.bindings = oauth_providers.platform_bindings(
-                        oauth_providers.get(mk.provider), mk.key_slot)
+                keyslots.assign(mk)
                 rl = keyslots.rate_bucket(mk.provider, mk.endpoint_id, mk.key_slot)
                 if rl is not None:
                     waited = await provider_limiter.acquire(*rl)

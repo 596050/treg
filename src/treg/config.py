@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
@@ -42,7 +42,8 @@ class PlatformSlot:
     account's key; removing one retires everything created on it."""
 
     slot: str
-    values: Mapping[str, str]  # setting name -> value; empty for the primary, whose are the fields
+    # setting name -> value; empty for the primary, whose are the fields. Credentials: never in repr.
+    values: Mapping[str, str] = field(repr=False)
 
     def value(self, setting: str) -> str:
         return self.values.get(setting, "")
@@ -110,7 +111,9 @@ TREG_USER_AGENT = "treg/1.0 (+https://treg.to)"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="TREG_", extra="ignore")
+    # Most of these values are credentials: a validation error names the field, never the value.
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="TREG_", extra="ignore",
+                                      hide_input_in_errors=True)
 
     review_sample_rate: float = Field(default=0, ge=0, le=1)
     feedback_hint_rate: float = Field(default=0, ge=0, le=1)

@@ -33,6 +33,7 @@ from ...infra.money_trace import mark_money, money_stage
 from ...models import Org
 from ...timeutil import utcnow_naive as _utcnow_naive
 from .idempotency import _release_idempotent_claim
+from . import keyslots
 from .resolve import MarketplaceCall, _openmart_credits, _usd_to_micro
 from .types import GatewayFailed, UpstreamResponse
 
@@ -1430,7 +1431,7 @@ async def _note_capacity_signal(mk: MarketplaceCall, status_code: int, headers, 
         if capacity_signatures.is_exhausting(signal):
             lock = await capacity_marks.strike(
                 mk.provider, endpoint_id=mk.endpoint_id, kind=signal.kind,
-                resets_at=signal.resets_at,
+                resets_at=signal.resets_at, slot=keyslots.capacity_slot(mk.key_slot),
                 note=f"{signal.kind} signature on {mk.endpoint_id}: {signal.detail[:80]}")
             capacity_view.invalidate()
             if lock is not None and lock.is_active():
@@ -1467,7 +1468,7 @@ async def _note_capacity_recovery(mk: MarketplaceCall) -> None:
     try:
         await capacity_view.load()
         cleared = False
-        for lock in capacity_view.locks(mk.provider, mk.endpoint_id):
+        for lock in capacity_view.locks(mk.provider, mk.endpoint_id, keyslots.capacity_slot(mk.key_slot)):
             if lock.is_active() and lock.lock_id != mk.probe_lock_id:
                 continue
             if await capacity_marks.clear(lock.key, lock_id=mk.probe_lock_id):

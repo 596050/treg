@@ -15,7 +15,7 @@ from sqlalchemy import select
 from ...infra.db import session_maker
 from ...models import Ephemeral
 from ...timeutil import utcnow_naive
-from .marks import LOCK_NS, Lock
+from .marks import LOCK_NS, Lock, lock_key
 from .policy import _CONCURRENCY, _ENDPOINT_RATE_LIMITS, _RATE_LIMITS, LatestState
 from .sweep import STATE_NS
 
@@ -45,23 +45,28 @@ class LatestStateView:
         """The sweep's state; call `load()` first. Sync and I/O-free on purpose (resolve.py rule)."""
         return self._states.get(provider)
 
-    def locks(self, provider: str, endpoint_id: str | None = None) -> list[Lock]:
-        """The call path's rows for this call, pending or active: the endpoint's and the provider's."""
-        keys = [k for k in (endpoint_id, provider) if k]
+    def locks(self, provider: str, endpoint_id: str | None = None,
+              slot: str | None = None) -> list[Lock]:
+        """The call path's rows for this call, pending or active: the endpoint's and the provider's.
+        A further treg-owned account (`slot`) has its own rows (`marks.lock_key`)."""
+        keys = [lock_key(k, None, "", slot) for k in (endpoint_id, provider) if k]
         return [lock for k in keys if (lock := self._locks.get(k)) is not None]
 
-    def active_lock(self, provider: str, endpoint_id: str | None = None) -> Lock | None:
-        return next((lock for lock in self.locks(provider, endpoint_id) if lock.is_active()), None)
+    def active_lock(self, provider: str, endpoint_id: str | None = None,
+                    slot: str | None = None) -> Lock | None:
+        return next((lock for lock in self.locks(provider, endpoint_id, slot) if lock.is_active()), None)
 
-    def is_exhausted(self, provider: str, endpoint_id: str | None = None) -> bool:
-        return self.exhausted_until(provider, endpoint_id) is not None
+    def is_exhausted(self, provider: str, endpoint_id: str | None = None,
+                     slot: str | None = None) -> bool:
+        return self.exhausted_until(provider, endpoint_id, slot) is not None
 
-    def exhausted_until(self, provider: str, endpoint_id: str | None = None):
-        """When this call serves again per whichever source refuses it now, else None."""
-        lock = self.active_lock(provider, endpoint_id)
+    def exhausted_until(self, provider: str, endpoint_id: str | None = None, slot: str | None = None):
+        """When this call serves again per whichever source refuses it now, else None. The sweep
+        reads only the provider's own account, so it never speaks for a further one."""
+        lock = self.active_lock(provider, endpoint_id, slot)
         if lock is not None:
             return lock.until
-        state = self._states.get(provider)
+        state = self._states.get(provider) if slot is None else None
         return state.exhausted_until if state and state.is_exhausted() else None
 
     def rate_bucket(self, provider: str, endpoint_id: str | None,
