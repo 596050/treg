@@ -188,8 +188,9 @@ store does not answer. Optional [money admission](money.md#optional-admission-be
 is a separate tenant using `acquire_lease`, `renew_lease` and `release_lease`, with explicit
 contention, lost-ownership and unavailable results. Its owner-checked Redis lease operations are
 bounded per attempt at twice `_TIMEOUT_S`; renewal and release retry a transient failure once
-within a shared four-times-`_TIMEOUT_S` budget. Admission also bounds renewal by its last confirmed
-lease validity. The local counter store reports leases unavailable rather than
+within a shared four-times-`_TIMEOUT_S` budget. Renewal checks the earliest confirmed expiry of
+all held admission leases before each attempt. Timeouts remain cooperative. The local counter
+store reports leases unavailable rather than
 claiming cross-process exclusion. Money admission falls back to database protection on store
 failure, whereas invitation budgets still fail closed. New tenants add narrow methods, not a
 generic get/set surface.

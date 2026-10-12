@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+import time
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -166,6 +167,16 @@ async def test_confirmed_renewal_ownership_loss_never_retries():
 
     assert await _store_with(no_owner).renew_lease("key", "owner", 3000) == "lost"
     assert len(calls) == 1
+
+
+async def test_expired_renewal_deadline_sends_no_command():
+    async def command(*args):
+        pytest.fail("expired renewal must not send EVAL")
+
+    result = await _store_with(command).renew_lease(
+        "key", "owner", 3000, deadline=time.monotonic() - 1)
+    assert result == "unavailable"
+    assert kv.drain_lease_timings() == []
 
 
 async def test_process_death_leaves_only_the_remaining_ttl(local_redis):

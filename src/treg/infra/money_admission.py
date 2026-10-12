@@ -207,8 +207,10 @@ class _Gate:
                     started = time.monotonic()
                     if self._ownership_lost():
                         return
-                    async with asyncio.timeout(self.valid_until[key] - started):
-                        result = await self.store.renew_lease(key, token, self.ttl_ms)
+                    deadline = min(self.valid_until.values())
+                    async with asyncio.timeout(deadline - time.monotonic()):
+                        result = await self.store.renew_lease(
+                            key, token, self.ttl_ms, deadline=deadline)
                     if result != "renewed" or self._ownership_lost():
                         if result == "unavailable":
                             self.observation.kv_errors += 1

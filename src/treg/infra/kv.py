@@ -62,7 +62,8 @@ class Store(Protocol):
 
     async def acquire_lease(self, key: str, token: str, ttl_ms: int) -> AcquireResult: ...
 
-    async def renew_lease(self, key: str, token: str, ttl_ms: int) -> RenewResult: ...
+    async def renew_lease(self, key: str, token: str, ttl_ms: int, *,
+                          deadline: float | None = None) -> RenewResult: ...
 
     async def release_lease(self, key: str, token: str) -> ReleaseResult: ...
 
@@ -98,7 +99,8 @@ class LocalStore:
     async def acquire_lease(self, key: str, token: str, ttl_ms: int) -> AcquireResult:
         return "unavailable"  # Local counters cannot promise cross-process exclusion.
 
-    async def renew_lease(self, key: str, token: str, ttl_ms: int) -> RenewResult:
+    async def renew_lease(self, key: str, token: str, ttl_ms: int, *,
+                          deadline: float | None = None) -> RenewResult:
         return "unavailable"
 
     async def release_lease(self, key: str, token: str) -> ReleaseResult:
@@ -157,21 +159,26 @@ class RedisStore:
         finally:
             _record_lease_timing("acquire", outcome, started)
 
-    async def renew_lease(self, key: str, token: str, ttl_ms: int) -> RenewResult:
+    async def renew_lease(self, key: str, token: str, ttl_ms: int, *,
+                          deadline: float | None = None) -> RenewResult:
         """Retry one transient fault with the original token; never recreate an expired lease.
 
-        The admission gate additionally bounds this by its last confirmed validity deadline.
+        The gate supplies the earliest held lease's absolute time.monotonic() deadline.
+        Check it before each EVAL: a cooperative timeout may arrive late or be translated
+        into a transient error by driver cleanup. These budgets cannot preempt a pause.
         A lost reply may have extended the TTL, but only a confirmed renewal retains ownership.
         """
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + _TIMEOUT_S * 4
+        stop_at = time.monotonic() + _TIMEOUT_S * 4
+        if deadline is not None:
+            stop_at = min(stop_at, deadline)
         for attempt in range(2):
-            if loop.time() >= deadline:
+            remaining = stop_at - time.monotonic()
+            if remaining <= 0:
                 break
             started = _clock()
             outcome = "cancelled"
             try:
-                async with asyncio.timeout_at(min(deadline, loop.time() + _TIMEOUT_S * 2)):
+                async with asyncio.timeout(min(remaining, _TIMEOUT_S * 2)):
                     renewed = await self._client.eval(_RENEW_LEASE, 1, key, token, ttl_ms)
                 outcome = "renewed" if renewed else "lost"
                 return outcome

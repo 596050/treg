@@ -326,8 +326,12 @@ has stopped, which is why database locks remain necessary.
 
 Renewal retries a transient timeout/connection failure once with the same owner-checked
 `PEXPIRE`: it cannot recreate an expired key or extend a successor's token. Each attempt has
-a 200 ms deadline within a shared 400 ms budget, additionally bounded by the gate's last confirmed
-validity. Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
+a 200 ms cooperative deadline within a shared 400 ms budget. The gate passes the earliest
+confirmed expiry of all held leases into `renew_lease`, which checks this absolute deadline
+before each EVAL and caps each attempt's timeout by the remaining budget. A late transient
+error or a timeout translated by driver cleanup cannot start another attempt after that deadline;
+these checks cannot preempt an already-running command or a scheduling pause.
+Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
 counts validity from each acquire/renew request's start, not its reply; after a scheduling pause
 it checks this deadline before renewing or entering the session. A renewal reply observed after
 the previous deadline marks isolation lost even if Redis accepted the extension. It never

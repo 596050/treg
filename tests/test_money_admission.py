@@ -28,7 +28,7 @@ class LeaseStore:
         self.values[key] = (token, now + ttl_ms / 1000)
         return "acquired"
 
-    async def renew_lease(self, key, token, ttl_ms):
+    async def renew_lease(self, key, token, ttl_ms, *, deadline=None):
         self.renewed.set()
         if self.lose_on_renew:
             self.values[key] = ("new-owner", time.monotonic() + 10)
@@ -491,8 +491,8 @@ async def test_renewal_reply_after_confirmed_validity_does_not_restore_ownership
     monkeypatch.setattr(admission, "time", SimpleNamespace(monotonic=lambda: now[0]))
     original = store.renew_lease
 
-    async def late_reply(*args):
-        result = await original(*args)
+    async def late_reply(*args, **kwargs):
+        result = await original(*args, **kwargs)
         now[0] += 10  # Simulate a reply observed after the old lease's remaining validity.
         return result
 
@@ -510,7 +510,7 @@ async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, mon
     _, store = gate
     cancelled = asyncio.Event()
 
-    async def blocked_renewal(*args):
+    async def blocked_renewal(*args, **kwargs):
         try:
             await asyncio.Event().wait()
         finally:
@@ -524,6 +524,60 @@ async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, mon
         assert store.values  # The caller must still finish its DB rollback/close.
     [row] = completed()
     assert row["lease_lost"] == 1 and row["kv_errors"] == 1 and row["failed"] == 0
+
+
+@pytest.mark.parametrize("failure", (
+    "late_transient_after_pause", "deadline_cancel_translated_by_cleanup", "earlier_org_expiry",
+))
+async def test_gate_deadline_reaches_each_redis_renewal_attempt(monkeypatch, failure):
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+
+    monkeypatch.setattr(kv, "_lease_errors", {})
+    monkeypatch.setattr(kv, "_lease_timings", {})
+    observation = admission._Observation("deferred")
+    owned = admission._Gate(observation, 3)
+    owned.leases = [("org:3", "token-a")]
+    started = time.monotonic()
+    owned.valid_until = {"org:3": started + 0.050}
+    if failure == "earlier_org_expiry":
+        owned.leases.append(("org:9", "token-b"))
+        owned.valid_until = {"org:3": started + 0.100, "org:9": started + 0.020}
+    earliest = min(owned.valid_until.values())
+    attempts = []
+
+    async def command(script, count, key, token, ttl):
+        attempts.append((key, token, time.monotonic()))
+        if len(attempts) == 1:
+            if failure == "late_transient_after_pause":
+                time.sleep(0.070)  # Real short loop stall; the timeout callback cannot run.
+            elif failure == "deadline_cancel_translated_by_cleanup":
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    await asyncio.sleep(0.030)
+            else:
+                try:
+                    await asyncio.sleep(0.030)
+                except asyncio.CancelledError:
+                    pass  # Simulate a driver translating the shorter deadline's cancellation.
+            raise RedisTimeoutError("late transient failure")
+        return 1
+
+    store = kv.RedisStore.__new__(kv.RedisStore)
+    store._client = SimpleNamespace(eval=command)
+    owned.store = store
+
+    async def wake(_):
+        return None
+
+    # Bypass only the initial cadence sleep. Both timeout layers use real asyncio and clocks.
+    monkeypatch.setattr(admission, "asyncio", SimpleNamespace(
+        sleep=wake, timeout=asyncio.timeout, CancelledError=asyncio.CancelledError))
+    await owned._renew()
+    assert len(attempts) == 1
+    assert attempts[0][:2] == ("org:3", "token-a")
+    assert attempts[0][2] < earliest <= time.monotonic()
+    assert owned.lost and observation.lease_lost == 1
 
 
 async def test_redis_outage_during_renewal_does_not_interrupt_the_transaction(gate):
