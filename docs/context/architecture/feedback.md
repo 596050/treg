@@ -194,6 +194,8 @@ store reports leases unavailable rather than
 claiming cross-process exclusion. Money admission falls back to database protection on store
 failure, whereas invitation budgets still fail closed. New tenants add narrow methods, not a
 generic get/set surface.
+Renewal returns `deadline_expired` when confirmed validity is exhausted; this is separate from
+store unavailability and from the command's own timeout budget.
 
 Lease failures retain fixed phase/type counts and client-observed maximum elapsed time in at most
 21 in-memory buckets. `kv.drain_lease_errors` hands these to the existing money diagnostic runner

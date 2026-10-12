@@ -53,6 +53,7 @@ class _Window:
     waiting_peak: int = 0
     active_peak: int = 0
     lease_lost: int = 0
+    deadline_expired: int = 0
     kv_errors: int = 0
     buckets: list[int] = field(default_factory=lambda: [0] * (len(_BOUNDS_MS) + 1))
     fallbacks: dict[str, int] = field(default_factory=dict)
@@ -71,6 +72,7 @@ class _Observation:
         self.entered: float | None = None
         self.reason: str | None = None
         self.lease_lost = 0
+        self.deadline_expired = 0
         self.kv_errors = 0
         try:
             self.started = _clock()
@@ -125,6 +127,7 @@ class _Observation:
                 row.buckets[next((i for i, bound in enumerate(_BOUNDS_MS)
                                   if wait_ms <= bound), len(_BOUNDS_MS))] += 1
                 row.lease_lost += self.lease_lost
+                row.deadline_expired += self.deadline_expired
                 row.kv_errors += self.kv_errors
                 if self.reason in _REASONS:
                     row.fallbacks[self.reason] = row.fallbacks.get(self.reason, 0) + 1
@@ -161,9 +164,10 @@ class _Gate:
         self.lost = False
 
     def _ownership_lost(self) -> bool:
-        if self.lost or any(time.monotonic() >= end for end in self.valid_until.values()):
+        if not self.lost and any(time.monotonic() >= end for end in self.valid_until.values()):
             self.lost = True
             self.observation.lease_lost = 1
+            self.observation.deadline_expired = 1
         return self.lost
 
     async def acquire(self, ids: list[int], wait_s: float) -> str | None:
@@ -208,12 +212,20 @@ class _Gate:
                     if self._ownership_lost():
                         return
                     deadline = min(self.valid_until.values())
-                    async with asyncio.timeout(deadline - time.monotonic()):
-                        result = await self.store.renew_lease(
-                            key, token, self.ttl_ms, deadline=deadline)
+                    validity_timeout = asyncio.timeout(deadline - time.monotonic())
+                    try:
+                        async with validity_timeout:
+                            result = await self.store.renew_lease(
+                                key, token, self.ttl_ms, deadline=deadline)
+                    except TimeoutError:
+                        if not validity_timeout.expired():
+                            raise  # A store-raised timeout is still a KV failure.
+                        result = "deadline_expired"
                     if result != "renewed" or self._ownership_lost():
                         if result == "unavailable":
                             self.observation.kv_errors += 1
+                        elif result == "deadline_expired":
+                            self.observation.deadline_expired = 1
                         self.lost = True
                         self.observation.lease_lost = 1
                         return  # Do not cancel the transaction or reacquire a lost lease.
@@ -370,7 +382,7 @@ def snapshot() -> list[dict]:
             **{name: round(getattr(window, name), 3) for name in (
                 "completed", "failed", "cancelled", "wait_total_ms", "wait_max_ms",
                 "execution_total_ms", "execution_max_ms", "total_total_ms", "total_max_ms",
-                "waiting_peak", "active_peak", "lease_lost", "kv_errors")},
+                "waiting_peak", "active_peak", "lease_lost", "deadline_expired", "kv_errors")},
             **current.get((operation, mode), {"waiting": 0, "active": 0}),
         }
         for i, bound in enumerate(_BOUNDS_MS):

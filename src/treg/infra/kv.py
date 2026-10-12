@@ -30,13 +30,13 @@ _lease_errors: dict[tuple[str, str], dict] = {}
 _lease_timings: dict[tuple[str, str], dict] = {}
 _LEASE_OUTCOMES = {
     "acquire": {"acquired", "busy", "unavailable", "cancelled"},
-    "renew": {"renewed", "lost", "unavailable", "cancelled"},
+    "renew": {"renewed", "lost", "unavailable", "cancelled", "deadline_expired"},
     "release": {"released", "lost", "not_owned", "unavailable", "cancelled"},
 }
 _LEASE_BUCKETS = (10, 50, 100, 200)
 
 AcquireResult = Literal["acquired", "busy", "unavailable"]
-RenewResult = Literal["renewed", "lost", "unavailable"]
+RenewResult = Literal["renewed", "lost", "unavailable", "deadline_expired"]
 ReleaseResult = Literal["released", "lost", "not_owned", "unavailable"]
 _RENEW_LEASE = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -172,19 +172,29 @@ class RedisStore:
         if deadline is not None:
             stop_at = min(stop_at, deadline)
         for attempt in range(2):
-            remaining = stop_at - time.monotonic()
+            now = time.monotonic()
+            if deadline is not None and now >= deadline:
+                return "deadline_expired"
+            remaining = stop_at - now
             if remaining <= 0:
                 break
             started = _clock()
             outcome = "cancelled"
+            validity_limited = stop_at == deadline and remaining <= _TIMEOUT_S * 2
+            attempt_timeout = asyncio.timeout(min(remaining, _TIMEOUT_S * 2))
             try:
-                async with asyncio.timeout(min(remaining, _TIMEOUT_S * 2)):
+                async with attempt_timeout:
                     renewed = await self._client.eval(_RENEW_LEASE, 1, key, token, ttl_ms)
                 outcome = "renewed" if renewed else "lost"
                 return outcome
             except Exception as exc:  # noqa: BLE001 - cancellation and ownership loss never retry
+                if isinstance(exc, TimeoutError) and attempt_timeout.expired() and validity_limited:
+                    outcome = "deadline_expired"
+                    return "deadline_expired"
                 outcome = "unavailable"
                 _record_lease_error("renew", exc, started)
+                if deadline is not None and time.monotonic() >= deadline:
+                    return "deadline_expired"  # Retain the actual failed attempt above.
                 if attempt or not _transient_lease_error(exc):
                     return "unavailable"
             finally:

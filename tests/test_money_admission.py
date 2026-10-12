@@ -479,6 +479,8 @@ async def test_renewer_resuming_after_a_pause_checks_last_confirmed_deadline(gat
         assert store.renewed.is_set() == (pause_s < 10)
         assert owned.lost == (pause_s >= 10)
         assert observed.lease_lost == (pause_s >= 10)
+        assert observed.deadline_expired == (pause_s >= 10)
+        assert observed.kv_errors == 0
         assert admission._local_lock(7).locked()  # Loss never releases an active session's gate.
         assert sum(phase == "acquire" for phase, _ in store.calls) == 1
     finally:
@@ -503,15 +505,19 @@ async def test_renewal_reply_after_confirmed_validity_does_not_restore_ownership
         assert admission._local_lock(7).locked()
     [row] = completed()
     assert row["lease_lost"] == 1 and row["failed"] == 0
+    assert row["deadline_expired"] == 1 and row["kv_errors"] == 0
     assert sum(phase == "acquire" for phase, _ in store.calls) == 1
 
 
-async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, monkeypatch):
+@pytest.mark.parametrize("expiry", ("result", "outer_timeout"))
+async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, monkeypatch, expiry):
     _, store = gate
     cancelled = asyncio.Event()
 
     async def blocked_renewal(*args, **kwargs):
         try:
+            if expiry == "result":
+                return "deadline_expired"
             await asyncio.Event().wait()
         finally:
             cancelled.set()
@@ -523,11 +529,30 @@ async def test_renewal_is_bounded_by_remaining_validity_before_cleanup(gate, mon
         assert admission._local_lock(7).locked()
         assert store.values  # The caller must still finish its DB rollback/close.
     [row] = completed()
-    assert row["lease_lost"] == 1 and row["kv_errors"] == 1 and row["failed"] == 0
+    assert row["lease_lost"] == 1 and row["kv_errors"] == 0 and row["failed"] == 0
+    assert row["deadline_expired"] == 1
+
+
+@pytest.mark.parametrize("error", (TimeoutError, RuntimeError))
+async def test_store_exception_before_validity_timeout_is_still_a_kv_error(gate, monkeypatch, error):
+    _, store = gate
+
+    async def failed_renewal(*args, **kwargs):
+        store.renewed.set()
+        raise error("store failure before the gate deadline")
+
+    monkeypatch.setattr(store, "renew_lease", failed_renewal)
+    async with admission.admit([7], operation="close"):
+        await asyncio.wait_for(store.renewed.wait(), 1)
+        assert admission._local_lock(7).locked()
+    [row] = completed()
+    assert row["lease_lost"] == 1 and row["kv_errors"] == 1
+    assert row["deadline_expired"] == 0 and row["failed"] == 0
 
 
 @pytest.mark.parametrize("failure", (
     "late_transient_after_pause", "deadline_cancel_translated_by_cleanup", "earlier_org_expiry",
+    "gate_timeout",
 ))
 async def test_gate_deadline_reaches_each_redis_renewal_attempt(monkeypatch, failure):
     from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -548,7 +573,9 @@ async def test_gate_deadline_reaches_each_redis_renewal_attempt(monkeypatch, fai
     async def command(script, count, key, token, ttl):
         attempts.append((key, token, time.monotonic()))
         if len(attempts) == 1:
-            if failure == "late_transient_after_pause":
+            if failure == "gate_timeout":
+                await asyncio.Event().wait()
+            elif failure == "late_transient_after_pause":
                 time.sleep(0.070)  # Real short loop stall; the timeout callback cannot run.
             elif failure == "deadline_cancel_translated_by_cleanup":
                 try:
@@ -578,6 +605,10 @@ async def test_gate_deadline_reaches_each_redis_renewal_attempt(monkeypatch, fai
     assert attempts[0][:2] == ("org:3", "token-a")
     assert attempts[0][2] < earliest <= time.monotonic()
     assert owned.lost and observation.lease_lost == 1
+    assert observation.deadline_expired == 1 and observation.kv_errors == 0
+    errors = kv.drain_lease_errors()
+    assert [(row["error_type"], row["count"]) for row in errors] == (
+        [] if failure == "gate_timeout" else [("redis_timeout", 1)])
 
 
 async def test_redis_outage_during_renewal_does_not_interrupt_the_transaction(gate):

@@ -337,6 +337,10 @@ it checks this deadline before renewing or entering the session. A renewal reply
 the previous deadline marks isolation lost even if Redis accepted the extension. It never
 reacquires, cancels the transaction or releases the local gate before session cleanup. Failed
 attempts remain in the existing KV diagnostics even when the retry recovers.
+Confirmed validity exhausted before an attempt, by its validity timeout, or by the gate's outer
+timeout reports `deadline_expired`, not KV unavailability. The admission summary counts it once
+per scope alongside `lease_lost`, without increasing `kv_errors`. Actual command failures still
+retain their diagnostic rows if the validity deadline also expires during failure cleanup.
 
 Lease cleanup retries a transient timeout/connection failure at most once, always with the same
 token-checked Lua delete. Each attempt keeps its 200 ms deadline within a shared 400 ms per-key

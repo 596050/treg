@@ -175,8 +175,34 @@ async def test_expired_renewal_deadline_sends_no_command():
 
     result = await _store_with(command).renew_lease(
         "key", "owner", 3000, deadline=time.monotonic() - 1)
-    assert result == "unavailable"
+    assert result == "deadline_expired"
     assert kv.drain_lease_timings() == []
+    assert kv.drain_lease_errors() == []
+
+
+@pytest.mark.parametrize("fail_first", (False, True))
+async def test_renewal_validity_timeout_is_not_a_redis_error(fail_first):
+    calls = 0
+
+    async def command(*args):
+        nonlocal calls
+        calls += 1
+        if fail_first and calls == 1:
+            raise redis_errors.TimeoutError("first attempt failed")
+        await asyncio.Event().wait()
+
+    result = await _store_with(command).renew_lease(
+        "key", "owner", 3000, deadline=time.monotonic() + 0.020)
+    assert result == "deadline_expired"
+    assert calls == 1 + fail_first
+    errors = kv.drain_lease_errors()
+    assert [(row["error_type"], row["count"]) for row in errors] == (
+        [("redis_timeout", 1)] if fail_first else [])
+    timings = {row["outcome"]: row for row in kv.drain_lease_timings()}
+    assert set(timings) == ({"unavailable", "deadline_expired"} if fail_first else {"deadline_expired"})
+    row = timings["deadline_expired"]
+    assert row["outcome"] == "deadline_expired" and row["count"] == 1
+    assert row["retry_count"] == int(fail_first)
 
 
 async def test_process_death_leaves_only_the_remaining_ttl(local_redis):
