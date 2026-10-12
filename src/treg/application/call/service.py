@@ -1235,8 +1235,7 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 # would exceed the provider's published rate waits briefly (≤ 2 s, in-process, no DB —
                 # the DB phase ended above) instead of being relayed into a 429 nobody can fix. Beyond
                 # the cap it proceeds as before; nothing is ever refused here.
-                rl = capacity_view.rate_bucket(
-                    mk.provider, mk.endpoint_id, mk.key_slot if mk.key_pooled else None)
+                rl = capacity_view.rate_bucket(mk.provider, mk.endpoint_id, mk.key_slot)
                 if rl is not None:
                     waited = await provider_limiter.acquire(*rl)
                     if waited:

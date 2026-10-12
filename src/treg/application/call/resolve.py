@@ -34,6 +34,7 @@ from ...domain.governance.access import pinned_tag_predicates
 from ...models import AsyncResourceRecord, AsyncTaskRecord, CapabilityPin, Org, Secret, Tool
 from ..connect import _host_of, _provider_bindings
 from . import keyslots
+from .idempotency import _IDEM_SCOPE_SEP, IDEMPOTENCY_HEADER, _idempotency_key
 from .types import ResolutionFailed, ResolvedTarget
 
 
@@ -352,10 +353,8 @@ class MarketplaceCall:
     # Admitted through an active capacity lock as its probe (domain.capacity.marks): a 2xx clears
     # exactly that lock.
     probe_lock_id: str | None = None
-    # Which of treg's accounts for the provider serves this platform call (`keyslots`), and whether
-    # the provider has several (smoothing then keeps one bucket per account).
+    # Which of treg's accounts for the provider serves this platform call (`keyslots`).
     key_slot: str | None = None
-    key_pooled: bool = False
     # A routed child: settle into this list instead of the ledger (CallContext.deferred_settles).
     deferred: list | None = None
 
@@ -1040,47 +1039,6 @@ def _params_hash(endpoint_id: str, query_items: list[tuple[str, str]], body: byt
         h.update(b"\x1f" + f"{k}={v}".encode("utf-8", "replace"))
     h.update(b"\x1e" + (hashlib.sha256(body).digest() if body else b""))
     return h.hexdigest()
-
-
-def _platform_bindings(provider, slot: str | None = None) -> list[dict]:
-    """Tier 4's injection: the SAME header/param shape a pasted key of this provider gets
-    (`_provider_bindings`), except the value is named rather than carried — `relay` reads
-    `platform_setting` from settings at call time. That is the whole security model: treg's key is
-    never written to a Secret row (unreadable by the tenant, unexportable by a local run, and
-    `api.py`'s cross-org secret check would reject it anyway).
-
-    `token_encode` is carried for HTTP Basic providers so the injector can ensure Base64 encoding,
-    matching `_provider_bindings` for tiers 1/2. Platform settings should already be encoded, but
-    carrying the attribute costs nothing and keeps the contract explicit.
-
-    `slot` names which of treg's accounts for the provider the relay injects (`keyslots`); without
-    one it injects the deployment's own field, as for a provider with one account."""
-    setting = platform_setting_name(provider.service)
-    encode_attr = {"token_encode": provider.token_encode} if provider.token_encode else {}
-    if provider.token_location in {"query", "json"}:
-        bindings = [{"platform_setting": setting, "injector": "env", "location": provider.token_location,
-                     "name": provider.token_param, "format": provider.token_format, **encode_attr}]
-    else:
-        bindings = [{"platform_setting": setting, "injector": "env", "location": "header",
-                     "name": provider.token_header, "format": provider.token_format, **encode_attr}]
-    # Keep tier 4 protocol-identical to BYOK. Required provider headers are constants, but they
-    # still use the same platform setting reference so the normal binding validator and injector
-    # own the whole shape. Crustdata's x-api-version pin is the first provider that needs this.
-    source = {k: v for k, v in bindings[0].items()
-              if k in ("platform_setting", "injector", "secret_field")}
-    bindings.extend({**source, "location": "header", "name": name, "format": value}
-                    for name, value in provider.required_headers)
-    # A per-user credential PAIR (Tomba's key+secret headers) needs treg's own second half on
-    # tier 4. platform_extra_setting is tier-4-only by design: extra_credential_setting would also
-    # ride user connects, pairing a user's key with treg's secret — a pair the provider rejects.
-    if provider.needs_extra_credential and provider.platform_extra_setting:
-        bindings.append({"platform_setting": provider.platform_extra_setting, "injector": "env",
-                         "location": provider.extra_credential_location,
-                         "name": provider.extra_credential_name,
-                         "format": "{secret}"})
-    if slot is not None:
-        bindings = [{**b, "account": f"{provider.service}/{slot}"} for b in bindings]
-    return bindings
 
 
 def _platform_offer(ep: dict, provider, org: Org) -> dict | None:
@@ -1854,27 +1812,24 @@ async def _enforce_platform_async_ownership(
     the call; empty when nothing had to)."""
     ownership = ep.get("resource_ownership") or {}
     required = ownership.get("requires") or {}
-    resource_owned = False
-    resource_slot: tuple[str | None, ...] = ()
+    resource_slot: tuple[str | None, ...] = ()  # (the owning row's key slot,) when it exists
     if required:
         value = _one_resource_value(
             ep, query,
             [("resource", {"name": required.get("param"), "in": required.get("in")})],
             body,
         )
-        owned_row = (await db.execute(select(AsyncResourceRecord.key_slot).where(
+        resource_slot = tuple((await db.execute(select(AsyncResourceRecord.key_slot).where(
             AsyncResourceRecord.org_id == caller.org_id,
             *pinned_tag_predicates(AsyncResourceRecord.tags, caller.membership.pinned_tags),
             AsyncResourceRecord.provider == ep["provider"],
             AsyncResourceRecord.resource_kind == required.get("kind"),
             AsyncResourceRecord.resource_id == value,
-        ))).first()
-        resource_owned = owned_row is not None
-        resource_slot = (owned_row[0],) if owned_row is not None else ()
+        ))).first() or ())
 
     refs = _async_resource_refs(ep)
     if not refs:
-        if required and not resource_owned:
+        if required and not resource_slot:
             raise _async_resource_denied(caller)
         return None, resource_slot
     value = _one_resource_value(ep, query, refs, body)
@@ -1900,7 +1855,7 @@ async def _enforce_platform_async_ownership(
                 )
                 if row.result_id == value or same_as_task:
                     return None, (row.key_slot,)
-    if resource_owned:
+    if resource_slot:
         return None, resource_slot
     raise _async_resource_denied(caller)
 
@@ -2314,20 +2269,19 @@ async def _resolve_marketplace_call(
             raise _provider_capacity_unavailable(
                 ep, service, capacity_view.exhausted_until(service, ep["id"]), probing=True)
     if cost is not None:
-        choice = keyslots.choose(
-            keyslots.accounts(provider), service=service, endpoint_id=ep["id"],
-            owners=async_owners + resource_owners,
+        key_slot = keyslots.choose(
+            service, ep["id"], owners=async_owners + resource_owners,
             idempotency_key=_key_affinity(caller, request_headers))
         virtual = Tool(
             org_id=caller.org_id, name=ep["id"], owner=caller.email,
             base_url=provider.base_url, host=_host_of(provider.base_url),
-            bindings=_platform_bindings(provider, choice.slot if choice.pooled else None),
+            bindings=oauth_providers.platform_bindings(provider, key_slot),
         )
         return MarketplaceCall(tool=virtual, tier="platform", skip_direct=skip_direct,
                                async_owner_call_id=async_owner_call_id,
                                public_resource_ids=public_resource_ids,
                                probe_lock_id=probe_lock_id,
-                               key_slot=choice.slot, key_pooled=choice.pooled, **{
+                               key_slot=key_slot, **{
             **common, "cost_type": str(cost.get("type") or "per_call"),
             "estimate_micro": info_est, "unit_micro": info_unit})
     raise _marketplace_no_credential(service, ep["id"], provider, ep)
@@ -2336,8 +2290,8 @@ async def _resolve_marketplace_call(
 def _key_affinity(caller: Caller, headers) -> str:
     """The caller's Idempotency-Key, scoped to the org: what pins a retry to one of treg's
     accounts (`keyslots`). Empty without the header."""
-    raw = ((headers.get("idempotency-key") if headers is not None else None) or "").strip()
-    return f"{caller.org_id}\x1f{raw}" if raw else ""
+    key = _idempotency_key(headers.get(IDEMPOTENCY_HEADER) if headers is not None else None)
+    return f"{caller.org_id}{_IDEM_SCOPE_SEP}{key}" if key else ""
 
 
 def _provider_capacity_unavailable(ep: dict, service: str, resets, *,

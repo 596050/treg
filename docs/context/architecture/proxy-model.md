@@ -424,8 +424,9 @@ than reporting a charge that has not happened yet.
 accounts: `{"contactout": {"b": {"platform_key_contactout": "..."}}}`. The deployment's own
 `platform_key_<provider>` is the account labelled `primary`, and every reader outside the call path
 (balance collectors, archive refresh, overflow verification) keeps using only it. An account names
-every credential that differs per account; one that omits its provider's paired setting (Tomba's
-secret, Adyntel's account email) is left out rather than paired with the primary's half. A label,
+every credential that differs per account. `keyslots.check_accounts` refuses to start on an account
+the call path cannot use: a provider without a pasted platform key, or an account that omits its
+provider's paired setting (Tomba's secret, Adyntel's account email). A label,
 never a credential, is what rows, buckets and telemetry (`tool_called.key_slot`) name, so reordering
 the accounts or regenerating one's key changes nothing.
 
@@ -442,10 +443,12 @@ the accounts or regenerating one's key changes nothing.
    call deletes its claim, and that is exactly the retry that reaches the provider.
 3. Otherwise the account whose smoothing bucket would wait least; ties rotate.
 
-With several accounts the platform binding carries `account: <provider>/<label>` and the relay
-injects that account's values, or fails `injection_failed` when the account is not configured; it
-never substitutes another account's credential. Error-body masking covers every account's value of
-the setting. A provider with one account carries no `account` and behaves exactly as before.
+A call on any account but the primary carries `account: <provider>/<label>` on its platform
+binding, and the relay injects that account's values or fails `injection_failed` when the account
+is not configured; it never substitutes another account's credential. The primary's credentials are
+the deployment's own fields, so a call on it carries no `account` and smooths in the provider's own
+bucket: a provider with one account behaves exactly as before. Error-body masking covers every
+account's value of the setting.
 
 Capacity is still per provider: a balance or quota signature on one account locks the provider for
 all of them, the sweep reads only the primary, and the burst-429 re-send stays on the same account.
@@ -512,8 +515,8 @@ refusal:
    crustdata 30/min, tikhub 30/s - before the first sweep). An endpoint whose upstream allowance
    differs from its provider's is its own bucket (`policy._ENDPOINT_RATE_LIMITS`, read through
    `view.rate_bucket`); it replaces the provider's limit for that route and does not draw from the
-   provider's bucket. A provider with several accounts keeps one bucket per account
-   (`<key>#<label>`), since each account has its own allowance. In-process on purpose: a second replica
+   provider's bucket. Each account other than the primary has its own allowance, so its own
+   bucket (`<key>#<label>`). In-process on purpose: a second replica
    doubles the effective rate, and the `rate_pressure` alert (step C) is the answer to that, not a
    shared counter on the request path.
 2. **One bounded `retry-after` re-send** - on a tier-4 **429** classified `burst` with

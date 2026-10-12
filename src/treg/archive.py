@@ -1706,7 +1706,8 @@ async def _refresh_call(client, key) -> bool:
         headers: dict[str, str] = dict(key.req_headers or {})  # replay what keyed the question
         params: list = []
         for binding in oauth_providers.platform_bindings(provider):
-            value = getattr(get_settings(), binding.get("platform_setting", ""), "") or ""
+            value = get_settings().platform_credential(
+                binding.get("platform_setting", ""), binding.get("account"))
             fmt = binding.get("format") or "{secret}"
             rendered = fmt.replace("{secret}", value) if value else fmt
             if binding.get("location") == "query":

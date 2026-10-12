@@ -27,7 +27,7 @@ from ..infra.upstream.relay import relay
 from ..models import AsyncResourceRecord, AsyncTaskRecord, Hold, Tool
 from ..timeutil import utcnow_naive
 from .call import keyslots
-from .call.resolve import _host_of, _platform_bindings
+from .call.resolve import _host_of
 from .call.types import UpstreamRequest
 
 
@@ -287,16 +287,11 @@ async def _poll(row: AsyncTaskRecord, client: httpx.AsyncClient) -> tuple[int, b
     # `?task_id=`) appended to the URL reached the provider empty - "invalid params" until the
     # 24-hour deadline. Path-parameter polls never showed it. Live 2026-09-02.
     # The task exists only on the account that accepted it (`keyslots`); a retired account
-    # raises here and the row fails like any other unreachable poll. With no key at all the relay
-    # refuses the injection, as it always has.
-    account = None
-    if slots := keyslots.accounts(provider):
-        choice = keyslots.choose(slots, service=row.provider, endpoint_id=row.endpoint_id,
-                                 owners=(row.key_slot,))
-        account = choice.slot if choice.pooled else None
+    # raises here and the row fails like any other unreachable poll.
+    account = keyslots.choose(row.provider, row.endpoint_id, owners=(row.key_slot,))
     tool = Tool(org_id=row.org_id, name=row.endpoint_id, owner="treg-worker",
                 base_url=provider.base_url, host=_host_of(provider.base_url),
-                bindings=_platform_bindings(provider, account))
+                bindings=oauth_providers.platform_bindings(provider, account))
 
     async def empty():
         if False:

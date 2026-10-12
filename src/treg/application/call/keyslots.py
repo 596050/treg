@@ -11,7 +11,8 @@ A provider can sit behind several treg-owned accounts (`TREG_PLATFORM_ACCOUNTS`,
    move a key; a retry across that change is a new request to the provider.
 3. Otherwise the account whose rate bucket would make the call wait least; ties rotate.
 
-A provider with one account always uses it, and its bucket keeps the provider's own name.
+The primary account's credentials are the deployment's own fields, so a call on it carries no
+account and smooths in the provider's own bucket: a provider with one account behaves as before.
 Sync and I/O-free: resolution calls this while it still holds its session.
 """
 
@@ -19,9 +20,9 @@ from __future__ import annotations
 
 import hashlib
 import itertools
-from dataclasses import dataclass
 
-from ...config import PlatformSlot, get_settings
+from ... import oauth_providers
+from ...config import PRIMARY_SLOT, get_settings
 from ...domain.capacity.view import view as capacity_view
 from ...infra.upstream.limiter import limiter
 from .types import ResolutionFailed
@@ -29,53 +30,43 @@ from .types import ResolutionFailed
 _rotation = itertools.count()
 
 
-@dataclass(frozen=True)
-class KeyChoice:
-    slot: str
-    pooled: bool  # the provider has several accounts: smoothing keeps one bucket per account
+def check_accounts() -> None:
+    """Refuse to start on an account the call path could not use: a provider without a pasted
+    platform key, or an account missing its provider's paired credential (pairing it with the
+    primary's half is a pair the provider rejects)."""
+    for service, accounts in get_settings().platform_extra_accounts().items():
+        provider = oauth_providers.get(service)
+        if provider is None or not provider.uses_pasted_secret:
+            raise RuntimeError(f"TREG_PLATFORM_ACCOUNTS names {service!r}, which has no platform key")
+        paired = provider.platform_extra_setting if provider.needs_extra_credential else ""
+        for slot in accounts:
+            if paired and not slot.value(paired):
+                raise RuntimeError(f"TREG_PLATFORM_ACCOUNTS {service}/{slot.slot} must name {paired}")
 
 
-def accounts(provider) -> tuple[PlatformSlot, ...]:
-    """The accounts that can serve `provider` (an `oauth_providers` entry), the primary first. An
-    extra account that does not name the provider's paired credential is left out: injecting the
-    primary's half beside another account's key is a pair the provider rejects."""
-    slots = get_settings().platform_slots(provider.service)
-    paired = provider.platform_extra_setting if provider.needs_extra_credential else ""
-    if not paired:
-        return slots
-    return slots[:1] + tuple(s for s in slots[1:] if s.value(paired))
-
-
-def choose(slots: tuple[PlatformSlot, ...], *, service: str, endpoint_id: str,
-           owners: tuple[str | None, ...] = (), idempotency_key: str = "") -> KeyChoice:
-    """One account of `slots` (non-empty) for this call; `owners` are the key slots of the rows the
-    call acts on."""
-    if not slots:
-        raise ResolutionFailed("platform_account_retired", status_code=410, detail={
-            "error": "platform_account_retired",
-            "message": f"treg holds no {service} account that can serve this; nothing was charged",
-        })
-    pooled = len(slots) > 1
+def choose(service: str, endpoint_id: str, *, owners: tuple[str | None, ...] = (),
+           idempotency_key: str = "") -> str:
+    """The label of the account serving this call; `owners` are the key slots of the rows it acts
+    on. A provider with no key at all answers `primary`, and the relay refuses the injection."""
+    slots = [s.slot for s in get_settings().platform_slots(service)] or [PRIMARY_SLOT]
     if owners:
-        wanted = {owner or slots[0].slot for owner in owners}
-        match = [s for s in slots if s.slot in wanted]
-        if len(wanted) > 1 or not match:
+        wanted = {owner or PRIMARY_SLOT for owner in owners}
+        if len(wanted) > 1 or not wanted <= set(slots):
             raise ResolutionFailed("platform_account_retired", status_code=410, detail={
                 "error": "platform_account_retired",
                 "message": (f"this {service} object was created on a treg account that can no longer "
                             "serve it; nothing was charged"),
             })
-        return KeyChoice(match[0].slot, pooled)
-    if not pooled:
-        return KeyChoice(slots[0].slot, False)
+        return wanted.pop()
+    if len(slots) == 1:
+        return slots[0]
     if idempotency_key:
-        ordered = sorted(slots, key=lambda s: s.slot)
-        digest = int(hashlib.sha256(idempotency_key.encode()).hexdigest()[:8], 16)
-        return KeyChoice(ordered[digest % len(ordered)].slot, True)
-    start = next(_rotation)
-    waits = []
-    for i in range(len(slots)):
-        slot = slots[(start + i) % len(slots)]
-        bucket = capacity_view.rate_bucket(service, endpoint_id, slot.slot)
-        waits.append((limiter.pending_wait_s(*bucket) if bucket else 0.0, i, slot.slot))
-    return KeyChoice(min(waits)[2], True)
+        slots.sort()
+        return slots[int(hashlib.sha256(idempotency_key.encode()).hexdigest()[:8], 16) % len(slots)]
+    start = next(_rotation) % len(slots)
+    return min(slots[start:] + slots[:start], key=lambda slot: _wait_s(service, endpoint_id, slot))
+
+
+def _wait_s(service: str, endpoint_id: str, slot: str) -> float:
+    bucket = capacity_view.rate_bucket(service, endpoint_id, slot)
+    return limiter.pending_wait_s(*bucket) if bucket else 0.0

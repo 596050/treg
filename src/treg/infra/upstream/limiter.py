@@ -41,18 +41,22 @@ class _Bucket:
         return self.limit / self.window_s
 
     def _refill(self, now: float) -> None:
-        self.tokens = min(self.CAPACITY, self.tokens + (now - self.updated) * self.rate)
+        self.tokens = self._tokens_at(now)
         self.updated = now
+
+    def _tokens_at(self, now: float) -> float:
+        return min(self.CAPACITY, self.tokens + (now - self.updated) * self.rate)
+
+    def wait_s(self, now: float) -> float:
+        """The wait `take` would ask for now, taking nothing."""
+        return max(0.0, 1.0 - self._tokens_at(now)) / self.rate
 
     def take(self, now: float) -> float:
         """Take one token; returns the seconds to wait before it is honoured (0 = immediately)."""
         self._refill(now)
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
-            return 0.0
-        deficit = 1.0 - self.tokens
-        self.tokens -= 1.0  # go negative: the queue is the wait
-        return deficit / self.rate
+        wait = self.wait_s(now)
+        self.tokens -= 1.0  # may go negative: the queue is the wait
+        return wait
 
 
 class Limiter:
@@ -68,11 +72,9 @@ class Limiter:
     def pending_wait_s(self, key: str, limit: int, window_s: float) -> float:
         """The wait a call on this bucket would be asked for now, taking nothing: how a provider
         with several accounts picks the least-loaded one."""
-        b = self._buckets.get(key)
-        if b is None or limit <= 0 or window_s <= 0:
+        if limit <= 0 or window_s <= 0:
             return 0.0
-        tokens = min(b.CAPACITY, b.tokens + (time.monotonic() - b.updated) * b.rate)
-        return 0.0 if tokens >= 1.0 else (1.0 - tokens) / b.rate
+        return self.bucket(key, limit, window_s).wait_s(time.monotonic())
 
     async def acquire(self, provider: str, limit: int, window_s: float, *,
                       max_wait_ms: int = DEFAULT_MAX_WAIT_MS) -> int:

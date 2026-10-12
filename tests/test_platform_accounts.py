@@ -14,7 +14,6 @@ from treg import api as A, oauth_providers
 from treg.application import asynctasks as task_app
 from treg.application.call import keyslots
 from treg.application.call.evidence import _secret_renderings
-from treg.application.call.resolve import _platform_bindings
 from treg.application.call.types import GatewayFailed, ResolutionFailed, UpstreamResponse
 from treg.config import PRIMARY_SLOT, Settings, get_settings
 from treg.infra.upstream.limiter import limiter
@@ -31,10 +30,6 @@ ACCOUNTS = {"tikhub": {"b": {"platform_key_tikhub": TIKHUB_B}}}
 def two_tikhub_accounts(platform_on, monkeypatch):
     monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(ACCOUNTS))
     get_settings.cache_clear()
-    limiter.reset()
-    yield
-    limiter.reset()
-    get_settings.cache_clear()
 
 
 def _settings(**env) -> Settings:
@@ -48,10 +43,8 @@ def test_the_primary_account_comes_first_and_labels_name_the_rest():
         {"tomba": {"b": {"platform_key_tomba": "T2", "platform_key_tomba_secret": "S2"}}}))
     slots = s.platform_slots("tomba")
     assert [x.slot for x in slots] == [PRIMARY_SLOT, "b"]
-    assert [x.value("platform_key_tomba_secret") for x in slots] == ["S1", "S2"]
     assert s.platform_credential("platform_key_tomba_secret", "tomba/b") == "S2"
-    assert s.platform_credential("platform_key_tomba", "tomba/primary") == "T1"
-    assert s.platform_credential("platform_key_tomba", None) == "T1"
+    assert s.platform_credential("platform_key_tomba_secret", None) == "S1", "the primary is the fields"
     assert s.platform_credential("platform_key_tomba", "tomba/gone") == "", "never another account's"
     assert set(s.platform_credential_values("platform_key_tomba")) == {"T1", "T2"}
 
@@ -75,15 +68,20 @@ def test_a_malformed_accounts_value_refuses_to_start(raw):
         _settings(platform_accounts=raw)
 
 
-def test_an_account_missing_its_paired_secret_is_left_out(monkeypatch):
-    monkeypatch.setenv("TREG_PLATFORM_KEY_TOMBA", "T1")
-    monkeypatch.setenv("TREG_PLATFORM_KEY_TOMBA_SECRET", "S1")
-    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps({"tomba": {
-        "b": {"platform_key_tomba": "T2"},
-        "c": {"platform_key_tomba": "T3", "platform_key_tomba_secret": "S3"}}}))
+@pytest.mark.parametrize("accounts, refused", [
+    ({"tomba": {"b": {"platform_key_tomba": "T2", "platform_key_tomba_secret": "S2"}}}, None),
+    ({"tomba": {"b": {"platform_key_tomba": "T2"}}}, "platform_key_tomba_secret"),
+    ({"nosuchprovider": {"b": {"platform_key_nosuchprovider": "Y"}}}, "no platform key"),
+])
+def test_an_account_the_call_path_cannot_use_refuses_to_start(monkeypatch, accounts, refused):
+    monkeypatch.setenv("TREG_PLATFORM_ACCOUNTS", json.dumps(accounts))
     get_settings.cache_clear()
     try:
-        assert [s.slot for s in keyslots.accounts(oauth_providers.get("tomba"))] == [PRIMARY_SLOT, "c"]
+        if refused is None:
+            keyslots.check_accounts()
+        else:
+            with pytest.raises(RuntimeError, match=refused):
+                keyslots.check_accounts()
     finally:
         get_settings.cache_clear()
 
@@ -91,13 +89,11 @@ def test_an_account_missing_its_paired_secret_is_left_out(monkeypatch):
 # ---- choosing an account ------------------------------------------------------------------------
 
 def test_an_owner_pins_its_account_and_a_retired_one_is_refused(two_tikhub_accounts):
-    slots = get_settings().platform_slots("tikhub")
-
     def choose(**kw):
-        return keyslots.choose(slots, service="tikhub", endpoint_id=EP, **kw)
+        return keyslots.choose("tikhub", EP, **kw)
 
-    assert choose(owners=("b",)).slot == "b"
-    assert choose(owners=(None,)).slot == PRIMARY_SLOT, "a row from before pools is the primary's"
+    assert choose(owners=("b",)) == "b"
+    assert choose(owners=(None,)) == PRIMARY_SLOT, "a row from before pools is the primary's"
     with pytest.raises(ResolutionFailed) as gone:
         choose(owners=("c",))
     assert gone.value.status_code == 410 and "nothing was charged" in str(gone.value.detail)
@@ -106,21 +102,19 @@ def test_an_owner_pins_its_account_and_a_retired_one_is_refused(two_tikhub_accou
 
 
 def test_an_idempotency_key_always_lands_on_the_same_account(two_tikhub_accounts):
-    slots = get_settings().platform_slots("tikhub")
-    picks = {keyslots.choose(slots, service="tikhub", endpoint_id=EP, idempotency_key=f"1\x1fk{i}").slot
-             for i in range(40)}
+    picks = {keyslots.choose("tikhub", EP, idempotency_key=f"1\x1fk{i}") for i in range(40)}
     assert picks == {PRIMARY_SLOT, "b"}, "keys spread across accounts"
     for i in range(5):
         key = f"1\x1fretry-{i}"
-        assert len({keyslots.choose(slots, service="tikhub", endpoint_id=EP, idempotency_key=key).slot
-                    for _ in range(5)}) == 1
+        assert len({keyslots.choose("tikhub", EP, idempotency_key=key) for _ in range(5)}) == 1
 
 
-def test_one_account_keeps_the_providers_own_bucket(platform_on):
-    slots = get_settings().platform_slots("tikhub")
-    choice = keyslots.choose(slots, service="tikhub", endpoint_id=EP)
-    assert choice == keyslots.KeyChoice(PRIMARY_SLOT, False)
-    assert all("account" not in b for b in _platform_bindings(oauth_providers.get("tikhub")))
+def test_the_primary_account_keeps_the_providers_own_binding_and_bucket(two_tikhub_accounts):
+    from treg.domain.capacity import view as view_mod
+    provider = oauth_providers.get("tikhub")
+    assert all("account" not in b for b in oauth_providers.platform_bindings(provider, PRIMARY_SLOT))
+    assert view_mod.view.rate_bucket("tikhub", EP, PRIMARY_SLOT)[0] == "tikhub"
+    assert view_mod.view.rate_bucket("tikhub", EP, "b")[0] == "tikhub#b"
 
 
 async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, two_tikhub_accounts,
@@ -143,12 +137,9 @@ async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, t
 
 async def test_a_busy_account_hands_the_next_call_to_an_idle_one(two_tikhub_accounts):
     from treg.domain.capacity import view as view_mod
-    slots = get_settings().platform_slots("tikhub")
-    bucket = view_mod.view.rate_bucket("tikhub", EP, PRIMARY_SLOT)
-    assert bucket is not None and bucket[0] == f"tikhub#{PRIMARY_SLOT}"
-    await limiter.acquire(*bucket)  # the primary's token is spent; "b" has one
-    for _ in range(4):
-        assert keyslots.choose(slots, service="tikhub", endpoint_id=EP).slot == "b"
+    await limiter.acquire(*view_mod.view.rate_bucket("tikhub", EP, PRIMARY_SLOT))
+    for _ in range(4):  # the primary's token is spent; "b" has one
+        assert keyslots.choose("tikhub", EP) == "b"
 
 
 # ---- objects stay on their account --------------------------------------------------------------
@@ -178,7 +169,7 @@ async def test_an_async_task_is_polled_on_the_account_that_accepted_it(two_tikhu
     await task_app._poll(row("b"), None)
     assert set(seen["account"]) == {"tikhub/b"}
     await task_app._poll(row(None), None)
-    assert set(seen["account"]) == {f"tikhub/{PRIMARY_SLOT}"}
+    assert set(seen["account"]) == {None}, "the primary injects the deployment's own field"
     with pytest.raises(ResolutionFailed):
         await task_app._poll(row("retired"), None)
 
@@ -188,7 +179,7 @@ async def test_the_relay_refuses_an_account_that_is_not_configured(two_tikhub_ac
     from treg.infra.upstream.relay import relay
     provider = oauth_providers.get("tikhub")
     tool = Tool(org_id=1, name=EP, owner="t", base_url=provider.base_url, host="api.tikhub.io",
-                bindings=[{**b, "account": "tikhub/retired"} for b in _platform_bindings(provider)])
+                bindings=[{**b, "account": "tikhub/retired"} for b in oauth_providers.platform_bindings(provider)])
 
     async def empty():
         if False:
@@ -204,6 +195,6 @@ async def test_the_relay_refuses_an_account_that_is_not_configured(two_tikhub_ac
 def test_error_bodies_mask_every_accounts_credential(two_tikhub_accounts):
     provider = oauth_providers.get("tikhub")
     tool = Tool(org_id=1, name=EP, owner="t", base_url=provider.base_url, host="api.tikhub.io",
-                bindings=_platform_bindings(provider, "b"))
+                bindings=oauth_providers.platform_bindings(provider, "b"))
     renderings = _secret_renderings(tool, {})
     assert TIKHUB_B in renderings and "PLATFORM-TIKHUB-KEY" in renderings

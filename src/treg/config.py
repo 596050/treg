@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
@@ -41,10 +42,10 @@ class PlatformSlot:
     account's key; removing one retires everything created on it."""
 
     slot: str
-    values: tuple[tuple[str, str], ...]  # (setting name, value): the primary and any paired half
+    values: Mapping[str, str]  # setting name -> value; empty for the primary, whose are the fields
 
     def value(self, setting: str) -> str:
-        return dict(self.values).get(setting, "")
+        return self.values.get(setting, "")
 
 
 @lru_cache
@@ -383,12 +384,10 @@ class Settings(BaseSettings):
     # happens to hold a key can't start spending it by accident. `TREG_PLATFORM_PROVIDERS=""` in the
     # Render dashboard turns the whole feature off without a redeploy.
     platform_providers: str = ""
-    # More treg-owned accounts behind a provider, one JSON object per account:
-    # {"contactout": [{"platform_key_contactout": "..."}], "tomba": [{"platform_key_tomba": "...",
-    # "platform_key_tomba_secret": "..."}]}. The `platform_key_<provider>` field above stays the
-    # primary account and every reader outside the call path keeps using it; the call path spreads
-    # platform calls across the primary and these (`platform_slots`). An account names every
-    # credential that differs per account, its paired secret included.
+    # More treg-owned accounts behind a provider, by label (rules: `_parse_platform_pools`):
+    # {"tomba": {"b": {"platform_key_tomba": "...", "platform_key_tomba_secret": "..."}}}.
+    # `platform_key_<provider>` above stays the `primary` account and the only one every reader
+    # outside the call path uses; the call path spreads platform calls across all of them.
     platform_accounts: str = ""
     # Whether DISCOVERY steers to routed rows: `treg.<capability>` first in search, and a routed
     # parent pulled in whenever one of its children matched. `off` leaves every routed endpoint
@@ -907,23 +906,24 @@ class Settings(BaseSettings):
         primary = getattr(self, setting, "") or ""
         if not primary:
             return ()
-        extra = _parse_platform_pools(self.platform_accounts).get((provider or "").lower(), {})
-        paired = sorted({name for values in extra.values() for name in values if name != setting})
-        own = {setting: primary, **{n: getattr(self, n, "") or "" for n in paired}}
-        return (PlatformSlot(PRIMARY_SLOT, tuple(sorted(own.items()))),
-                *(PlatformSlot(label, tuple(sorted(values.items())))
-                  for label, values in sorted(extra.items())))
+        return (PlatformSlot(PRIMARY_SLOT, {}),
+                *self.platform_extra_accounts().get((provider or "").lower(), ()))
+
+    def platform_extra_accounts(self) -> dict[str, tuple[PlatformSlot, ...]]:
+        """`TREG_PLATFORM_ACCOUNTS` by provider, whether or not the primary key is set."""
+        return {provider: tuple(PlatformSlot(label, values) for label, values in sorted(accounts.items()))
+                for provider, accounts in _parse_platform_pools(self.platform_accounts).items()}
 
     def platform_credential(self, setting: str, account: str | None) -> str:
         """The value a `platform_setting` binding injects. Without an account, the deployment's
-        own field (a provider with one account). With one (`<provider>/<slot>`), that account's
-        value, or "" when it is not configured: another account's credential would act on objects
-        that exist only on the named one."""
+        own field: the primary account. With one (`<provider>/<label>`), that account's value, or
+        "" when it is not configured: another account's credential would act on objects that exist
+        only on the named one."""
         if account is None:
             return getattr(self, setting, "") or ""
         provider, _, label = account.partition("/")
-        match = [s for s in self.platform_slots(provider) if s.slot == label]
-        return match[0].value(setting) if match else ""
+        values = _parse_platform_pools(self.platform_accounts).get(provider, {}).get(label, {})
+        return values.get(setting, "")
 
     def platform_credential_values(self, setting: str) -> tuple[str, ...]:
         """Every value `setting` holds across treg's accounts: what error-body masking hides."""
