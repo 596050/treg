@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 
+from .... import jsontext
 from . import AggregatorRequest, AggregatorResult
 
 BASE = "https://api.monid.ai/v1"
@@ -81,7 +82,7 @@ def poll_request(run_id: str, key: str) -> AggregatorRequest:
 
 
 def _dump(value) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+    return jsontext.dumps_bytes(value, separators=(",", ":"))
 
 
 def _cost_micro(doc: dict) -> int | None:

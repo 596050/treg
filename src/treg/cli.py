@@ -42,6 +42,7 @@ from urllib.parse import parse_qsl, quote, urlsplit
 import httpx
 
 from . import agents as _agents
+from . import jsontext
 from .feedback_contract import FEEDBACK_CATEGORIES, FEEDBACK_DESCRIPTION, REVIEW_USEFULNESS, REVIEW_DESCRIPTION
 # One source of truth for the proxy's default port (help text below). Importing the module is cheap —
 # it pulls only stdlib plus httpx, which the CLI already has; `cryptography` stays lazy inside it.
@@ -2548,7 +2549,7 @@ def _call_envelope(response: httpx.Response, content_type: str) -> dict:
 def _show_call_response(response: httpx.Response) -> None:
     content_type = getattr(response, "headers", {}).get("content-type", "").partition(";")[0].strip().lower()
     if _JSON_OVERRIDE:
-        print(json.dumps(_call_envelope(response, content_type), ensure_ascii=False, separators=(",", ":")))
+        print(jsontext.dumps(_call_envelope(response, content_type), separators=(",", ":")))
         sys.stdout.flush()
         if response.status_code >= 400:
             raise SystemExit(1)
@@ -5592,7 +5593,7 @@ def cmd_hub_run(args, cfg) -> None:
     if r.status_code == 200 and not getattr(args, "json", False):
         out = r.json()
         _section(f"② Output of {out.get('recipe')}")
-        print(json.dumps(out.get("output"), indent=2, ensure_ascii=False)[:6000])
+        print(jsontext.dumps(out.get("output"), indent=2)[:6000])
         _hub_trace(out)
         return
     _hub_report(r, json_out=getattr(args, "json", False))
