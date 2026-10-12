@@ -26,6 +26,8 @@ from ...infra.db import session_maker
 from ...models import Secret
 from ...sandbox_identity import visitor_name
 from ...domain.capacity import signatures as capacity_signatures
+from ...domain.capacity.fair_share import NO_SLOT, ShareBusy, fair_share
+from ...domain.capacity.fair_share import RETRY_AFTER_S as RETRY_AFTER_SHARE_S
 from ...domain.capacity.view import view as capacity_view
 from ...infra.upstream.limiter import limiter as provider_limiter
 from ...infra.upstream.relay import identify_as_treg, relay, scope_shared_idempotency_key
@@ -1206,6 +1208,7 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
         # (settle, first-call and the idempotent store all run on their own sessions), and the session
         # is `expire_on_commit=False`, so `tool`/`secrets`/`caller.org` stay usable without a reload.
         await db.commit()
+        share_slot = NO_SLOT
         try:
             platform_tier = mk is not None and mk.tier == "platform"
             raw_headers = tuple(request.headers.raw)
@@ -1302,6 +1305,24 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 archive_key_hash, archive_content_hash = served["key_hash"], served["content_hash"]
                 response = _served_response(served, body)
             else:
+                if platform_tier and (cap := capacity_view.concurrency(mk.provider)) \
+                        and (wait_s := get_settings().fair_share_wait_s) > 0:
+                    # Fair share (domain/capacity/fair_share.py): every team shares this account's
+                    # places; a full provider hands the next free place to the team with the fewest
+                    # calls in progress. Held until the answer is read, released on every path below.
+                    try:
+                        share_slot = await fair_share.acquire(
+                            mk.provider, caller.org_id, cap, max_wait_s=wait_s)
+                    except ShareBusy as busy:
+                        raise GatewayFailed("share_busy", status_code=429, detail={
+                            "error": "share_busy", "provider": mk.provider,
+                            "endpoint_id": mk.endpoint_id, "active": busy.active,
+                            "retry_after_s": RETRY_AFTER_SHARE_S,
+                            "message": f"{mk.provider} is fully used and your team already has "
+                                       f"{busy.active} calls in progress on it; not charged, "
+                                       f"try again in {RETRY_AFTER_SHARE_S} s"}) from None
+                    if share_slot.waited_ms:
+                        smoothed.append(f"share_wait={share_slot.waited_ms}")
                 upstream_started = _now_ms()
                 response = await relay(
                     upstream_request,
@@ -1429,6 +1450,8 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
             raise
         except httpx.RequestError as exc:  # upstream down/timeout is a gateway fault, not treg's 500
             raise _gateway_request_failure(exc) from exc
+        finally:
+            share_slot.release()
     except asyncio.CancelledError:
         await _finish_cancelled_call(request, mk, call_ref, response)
         raise

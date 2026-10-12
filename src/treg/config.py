@@ -180,6 +180,10 @@ class Settings(BaseSettings):
     spool_max_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
     spool_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     spool_parse_concurrency: int = Field(default=2, ge=1, le=16)
+    # Fair share of a provider's concurrency on treg's own keys (domain/capacity/fair_share.py):
+    # how long a call waits in line for a place before a routed job moves on and a direct call is
+    # refused, not charged. 0 turns the gate off (TREG_FAIR_SHARE_WAIT_S=0).
+    fair_share_wait_s: float = Field(default=2.0, ge=0, le=30)
 
     # ---- referral program (referrals.py) --------------------------------------------------------
     # Flat bounties, not a percentage of top-ups. At 0% platform margin a percentage would be a

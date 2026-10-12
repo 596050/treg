@@ -202,6 +202,18 @@ _RATE_LIMITS: dict[str, dict] = {
     "getleadsio": {"limit": 100, "window_s": 60, "source": "docs"},
 }
 
+# Calls in progress a provider allows on treg's own key (domain/capacity/fair_share.py shares them
+# between teams; BYOK calls bypass it). Only providers that publish or report such a cap belong here.
+_CONCURRENCY: dict[str, int] = {
+    # The key reports its concurrency room in every answer (usage.remaining_before.concurrent).
+    "crawl4ai": 500,
+    "hlrlookup": 210,
+    # The key status API reports its configured concurrency limit.
+    "litescrape": 25,
+    # treg's own conservative setting for the shared account (catalog row `limits`).
+    "fishaudio": 5,
+}
+
 
 def policy_population(configured_keys: set[str] | None = None) -> list[str]:
     """Every account a policy must exist for: each platform-key slot plus each aggregator."""

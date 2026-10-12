@@ -16,7 +16,7 @@ from ...infra.db import session_maker
 from ...models import Ephemeral
 from ...timeutil import utcnow_naive
 from .marks import LOCK_NS, Lock
-from .policy import _RATE_LIMITS, LatestState
+from .policy import _CONCURRENCY, _RATE_LIMITS, LatestState
 from .sweep import STATE_NS
 
 TTL_S = 60.0
@@ -72,6 +72,10 @@ class LatestStateView:
         if not rl or not rl.get("limit") or not rl.get("window_s"):
             return None
         return int(rl["limit"]), float(rl["window_s"])
+
+    def concurrency(self, provider: str) -> int:
+        """Calls in progress the provider allows on its platform key, or 0 when unknown (no gate)."""
+        return _CONCURRENCY.get(provider, 0)
 
     def invalidate(self) -> None:
         self._loaded_at = -1.0

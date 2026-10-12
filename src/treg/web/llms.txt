@@ -78,7 +78,10 @@ resolves the tool by host and injects the credential:
   `treg` CLI does this automatically on a WAF 403 - you only need it over raw HTTP.
 - **Concurrency:** there is no per-token or per-team concurrency limit - fire calls in parallel
   (`Promise.all`, `asyncio.gather`); upstream I/O holds no request database connection.
-  Provider rate limits are relayed verbatim. If treg itself is saturated you get a
+  Provider rate limits are relayed verbatim. When a provider that caps calls in progress is fully
+  used on treg's key, its places are shared fairly: your call may wait briefly in line, and after a
+  short wait it is refused with a `429` `share_busy` (with `retry_after_s`, nothing billed) - retry
+  then, or use the routed tool (`treg.<job>`), which moves on to the next provider by itself. If treg itself is saturated you get a
   `503` with `{"treg_saturated": true}` and a `Retry-After` header - wait that long and retry the
   same request; nothing was billed. A bare 5xx with no JSON `detail` is never treg's own answer.
 

@@ -214,8 +214,11 @@ deployment can relay - the price a "free" endpoint may actually bill, stated bef
 ## `X-Treg-Smoothed` - the call waited for treg's own rate limit
 
 On platform calls, including owned free polling: `wait=<ms>` when the call was spaced behind other callers on the
-same platform key, `retry=1` when a burst-429 with a short `retry-after` was re-sent once (body-less GET/HEAD only). Informational; the status and body are the provider's. See
-`architecture/proxy-model.md` § Burst smoothing.
+same platform key, `retry=1` when a burst-429 with a short `retry-after` was re-sent once (body-less GET/HEAD only),
+`share_wait=<ms>` when the provider's concurrency was fully used and the call waited in line for a place
+(`ops/capacity.md` § fair share). Informational; the status and body are the provider's. See
+`architecture/proxy-model.md` § Burst smoothing. A call that waited too long is refused instead with the
+typed `share_busy` 429 (`retry_after_s`, not charged); a routed job asks its next provider.
 
 ## `X-Treg-Error` - whose refusal is this?
 `bootstrap_handlers._mark_treg_own_errors` tags treg's **own**

@@ -21,6 +21,8 @@ sources:
   - tests/test_capacity_overflow_spend.py
   - src/treg/alembic/versions/0008_org_platform_overflow_disabled.py
   - tests/test_capacity_smoothing.py
+  - src/treg/domain/capacity/fair_share.py
+  - tests/test_capacity_fair_share.py
   - src/treg/domain/capacity/overflow_seed.json
   - src/treg/infra/upstream/aggregators/__init__.py
   - src/treg/infra/upstream/aggregators/orthogonal.py
@@ -554,6 +556,29 @@ away from everyone.
 smoothing. The provider's rate limit travels in the published latest state (`LatestState.rate_limit`,
 from `CapacityPolicy.rate_limit`), so the request path never reads
 the policy table. `rate_pressure` alerting is step C.
+
+## Protect, part three — fair share of a provider's concurrency
+
+A provider that caps the calls in progress on one account (`_CONCURRENCY` in `policy.py`, read
+through `view.concurrency`) is shared by every team on treg's key. Without a gate it is first come,
+first served: one team's burst takes every place and other teams' calls are refused upstream.
+
+`domain/capacity/fair_share.py` applies max-min fairness on those places, in-process and DB-free,
+after the DB phase ended and around the relay (`application/call/service.py`, platform tier only):
+
+1. A free place with no one waiting is taken at once.
+2. When every place is taken the call waits in one line; each place that frees goes to the waiting
+   call whose team has the fewest calls in progress, oldest first on a tie. No place stays empty
+   while a call waits.
+3. After `fair_share_wait_s` (default 2 s; 0 turns the gate off) the call leaves the line as the
+   typed `share_busy` 429, not charged (the hold is released). A routed job reads it as a child
+   error and asks its next provider; a direct call gets `retry_after_s`.
+
+The place is held until the answer is read (metered and owned-poll bodies), released in the relay
+block's `finally` on every path. A streamed free answer releases when the relay block ends, before
+the stream finishes. A wait shows in `X-Treg-Smoothed` as `share_wait=<ms>`. Own keys are never
+gated (non-negotiable 1). The counters are per process: exact for one server process; a
+multi-process deploy moves them to the shared store (`infra/kv.py`).
 
 ## Overflow, the child cycle (step E) — off by default
 
