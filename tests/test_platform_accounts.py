@@ -140,7 +140,11 @@ async def test_platform_calls_spread_across_the_accounts(clients: AsyncClient, t
     assert sorted(slots) == sorted([PRIMARY_SLOT, PRIMARY_SLOT, "b", "b"])
 
 
-async def test_a_busy_account_hands_the_next_call_to_an_idle_one(two_tikhub_accounts):
+async def test_a_busy_account_hands_the_next_call_to_an_idle_one(clients: AsyncClient, two_tikhub_accounts):
+    from test_capacity_smoothing import _publish_rate
+    from treg.domain.capacity.view import view as capacity_view
+    await _publish_rate("tikhub", 1, 60.0)  # slow enough that the spent token cannot refill mid-test
+    await capacity_view.load()
     await limiter.acquire(*keyslots.rate_bucket("tikhub", EP, PRIMARY_SLOT))
     for _ in range(4):  # the primary's token is spent; "b" has one
         assert _assigned() == "b"
