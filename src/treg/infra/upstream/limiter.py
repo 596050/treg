@@ -65,6 +65,15 @@ class Limiter:
             b = self._buckets[provider] = _Bucket(limit, window_s)
         return b
 
+    def pending_wait_s(self, key: str, limit: int, window_s: float) -> float:
+        """The wait a call on this bucket would be asked for now, taking nothing: how a provider
+        with several accounts picks the least-loaded one."""
+        b = self._buckets.get(key)
+        if b is None or limit <= 0 or window_s <= 0:
+            return 0.0
+        tokens = min(b.CAPACITY, b.tokens + (time.monotonic() - b.updated) * b.rate)
+        return 0.0 if tokens >= 1.0 else (1.0 - tokens) / b.rate
+
     async def acquire(self, provider: str, limit: int, window_s: float, *,
                       max_wait_ms: int = DEFAULT_MAX_WAIT_MS) -> int:
         """Wait for a token, at most `max_wait_ms`; returns the milliseconds actually waited. A wait
@@ -87,4 +96,5 @@ class Limiter:
 
 
 limiter = Limiter()
-"""The process-wide instance (one bucket per provider, or per endpoint with its own allowance)."""
+"""The process-wide instance: one bucket per provider, or per endpoint with its own allowance,
+and per treg-owned account when the provider has several."""

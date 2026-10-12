@@ -198,7 +198,7 @@ async def relay(
         # extractable through a local run.
         setting = binding.get("platform_setting")
         if setting:
-            value = getattr(get_settings(), setting, "") or ""
+            value = get_settings().platform_credential(setting, binding.get("account"))
             if not value:
                 raise GatewayFailed(
                     "injection_failed", status_code=502,

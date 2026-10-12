@@ -15,6 +15,7 @@ from sqlalchemy import select
 from ...infra.db import session_maker
 from ...models import Ephemeral
 from ...timeutil import utcnow_naive
+from ...config import PRIMARY_SLOT
 from .marks import LOCK_NS, Lock
 from .policy import _CONCURRENCY, _ENDPOINT_RATE_LIMITS, _RATE_LIMITS, LatestState
 from .sweep import STATE_NS
@@ -64,15 +65,19 @@ class LatestStateView:
         state = self._states.get(provider)
         return state.exhausted_until if state and state.is_exhausted() else None
 
-    def rate_bucket(self, provider: str, endpoint_id: str | None) -> tuple[str, int, float] | None:
+    def rate_bucket(self, provider: str, endpoint_id: str | None,
+                    slot: str | None = None) -> tuple[str, int, float] | None:
         """(bucket key, limit, window_s) smoothing this platform call, or None when unknown. An
         endpoint with its own allowance (`_ENDPOINT_RATE_LIMITS`) is its own bucket; every other
-        endpoint shares the provider's. Sync, I/O-free."""
+        endpoint shares the provider's. Each treg-owned account other than the primary (`slot`)
+        has its own allowance, so its own bucket. Sync, I/O-free."""
         pair = _pair(_ENDPOINT_RATE_LIMITS.get(endpoint_id or ""))
-        if pair:
-            return endpoint_id, *pair
-        pair = self.rate_limit(provider)
-        return (provider, *pair) if pair else None
+        key = endpoint_id
+        if not pair:
+            pair, key = self.rate_limit(provider), provider
+        if not pair:
+            return None
+        return (f"{key}#{slot}" if slot not in (None, PRIMARY_SLOT) else key, *pair)
 
     def rate_limit(self, provider: str) -> tuple[int, float] | None:
         """(limit, window_s) for the provider's platform key, or None when unknown. Published by the

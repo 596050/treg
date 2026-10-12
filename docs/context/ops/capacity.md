@@ -248,6 +248,11 @@ overflow, and a typed 503. Live account state and production observations belong
 Scope: treg-owned platform credentials only. Tiers 1/2 (a caller's own tool or key) are never
 consulted or affected by anything here.
 
+A provider can have several treg-owned accounts (`TREG_PLATFORM_ACCOUNTS`, see
+`architecture/proxy-model.md`). Smoothing keeps one bucket per account. Everything else here is
+still per provider: policies, the sweep and balance collectors read only the primary account, and a
+call-path lock on one account's balance or quota signature refuses the provider on all of them.
+
 MillionVerifier's platform slot has an acknowledged exhaustion-signature gap in
 `tests/test_capacity_overflow_routes.py::_UNRECORDED_SIGNATURE`: no verified exhaustion response is
 available. Its balance collector reads `credits` from the free `/api/v3/credits`

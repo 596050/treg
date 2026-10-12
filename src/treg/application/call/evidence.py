@@ -116,12 +116,12 @@ def _secret_renderings(tool: Tool, secrets: dict[int, Secret]) -> list[str]:
             continue
         setting = binding.get("platform_setting")
         if setting:
-            value = getattr(get_settings(), setting, None)
-            if not isinstance(value, str) or not value.strip():
-                continue
-            value = value.strip()
-            add_credential(value)
-            add(fmt.format(secret=value))
+            # Every account's value, not only the injected one: a provider that echoes a key it
+            # was not sent this time (a cached error page, another account's request) is still
+            # echoing treg's credential.
+            for value in get_settings().platform_credential_values(setting):
+                add_credential(value)
+                add(fmt.format(secret=value))
             continue
 
         sid = binding.get("secret_id")

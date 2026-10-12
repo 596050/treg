@@ -884,6 +884,9 @@ class AsyncTaskRecord(SQLModel, table=True):
     tags: dict | None = Field(default=None, sa_column=Column("tags", JSON, nullable=True))
     # The terminal answer's verdict word, kept with `hit` for the same insert race.
     verdict: str | None = Field(default=None)
+    # The treg-owned account the row lives on (config.PlatformSlot.slot); NULL = the primary
+    # account. Later polls, fetches and edits must use the same account.
+    key_slot: str | None = Field(default=None)
 
 
 class AsyncResourceRecord(SQLModel, table=True):
@@ -906,6 +909,9 @@ class AsyncResourceRecord(SQLModel, table=True):
 
     # Attribution snapshot: never infer ownership from a current membership or lossy audit.
     tags: dict | None = Field(default=None, sa_column=Column("tags", JSON, nullable=True))
+    # The treg-owned account the row lives on (config.PlatformSlot.slot); NULL = the primary
+    # account. Later polls, fetches and edits must use the same account.
+    key_slot: str | None = Field(default=None)
 
 
 class ProviderResource(SQLModel, table=True):
@@ -939,6 +945,9 @@ class ProviderResource(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now, index=True)
     updated_at: datetime = Field(default_factory=_now)
     deleted_at: datetime | None = Field(default=None, index=True)
+    # The treg-owned account the row lives on (config.PlatformSlot.slot); NULL = the primary
+    # account. Later polls, fetches and edits must use the same account.
+    key_slot: str | None = Field(default=None)
 
 
 class TagSpend(SQLModel, table=True):

@@ -16,6 +16,9 @@ sources:
   - src/treg/application/call/service.py
   - src/treg/application/call/types.py
   - src/treg/application/asynctasks.py
+  - src/treg/application/call/keyslots.py
+  - src/treg/alembic/versions/0069_platform_key_slot.py
+  - tests/test_platform_accounts.py
   - src/treg/client_identity.py
   - src/treg/call_surface.py
   - src/treg/sandbox_identity.py
@@ -415,6 +418,38 @@ A routed call whose outcome is still pending (`202` with `X-Treg-Route-Outcome: 
 `request.state.call_cost_micro` as `None` and skips the `X-Treg-Cost-Micro` response header rather
 than reporting a charge that has not happened yet.
 
+## Several treg-owned accounts behind one provider
+
+`TREG_PLATFORM_ACCOUNTS` adds accounts behind a provider, as JSON from provider to labelled
+accounts: `{"contactout": {"b": {"platform_key_contactout": "..."}}}`. The deployment's own
+`platform_key_<provider>` is the account labelled `primary`, and every reader outside the call path
+(balance collectors, archive refresh, overflow verification) keeps using only it. An account names
+every credential that differs per account; one that omits its provider's paired setting (Tomba's
+secret, Adyntel's account email) is left out rather than paired with the primary's half. A label,
+never a credential, is what rows, buckets and telemetry (`tool_called.key_slot`) name, so reordering
+the accounts or regenerating one's key changes nothing.
+
+`application/call/keyslots.py` picks the account during resolution, after ownership is checked:
+
+1. A call acting on a task, result or managed resource uses the account that created it.
+   `AsyncTaskRecord`, `AsyncResourceRecord` and `ProviderResource` carry `key_slot`; NULL is a row
+   from before accounts existed and means `primary`. A row whose account is no longer configured is
+   refused with 410 `platform_account_retired` before reserve, and the async worker's poll fails
+   and backs off like any unreachable poll until the deadline releases the hold.
+2. A call carrying `Idempotency-Key` uses the account the org-scoped key hashes to, so a retry that
+   reaches the provider again lands where the provider can recognise it. Adding or removing an
+   account can move a key. The idempotency claim is no place to remember the account: a failed
+   call deletes its claim, and that is exactly the retry that reaches the provider.
+3. Otherwise the account whose smoothing bucket would wait least; ties rotate.
+
+With several accounts the platform binding carries `account: <provider>/<label>` and the relay
+injects that account's values, or fails `injection_failed` when the account is not configured; it
+never substitutes another account's credential. Error-body masking covers every account's value of
+the setting. A provider with one account carries no `account` and behaves exactly as before.
+
+Capacity is still per provider: a balance or quota signature on one account locks the provider for
+all of them, the sweep reads only the primary, and the burst-429 re-send stays on the same account.
+
 ## Platform capacity: refuse before reserve (plan step D)
 
 Catalog `platform_request` checks and provider-specific request guards run only after a platform
@@ -477,7 +512,8 @@ refusal:
    crustdata 30/min, tikhub 30/s - before the first sweep). An endpoint whose upstream allowance
    differs from its provider's is its own bucket (`policy._ENDPOINT_RATE_LIMITS`, read through
    `view.rate_bucket`); it replaces the provider's limit for that route and does not draw from the
-   provider's bucket. In-process on purpose: a second replica
+   provider's bucket. A provider with several accounts keeps one bucket per account
+   (`<key>#<label>`), since each account has its own allowance. In-process on purpose: a second replica
    doubles the effective rate, and the `rate_pressure` alert (step C) is the answer to that, not a
    shared counter on the request path.
 2. **One bounded `retry-after` re-send** - on a tier-4 **429** classified `burst` with

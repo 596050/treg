@@ -633,6 +633,7 @@ async def test_platform_openrouter_model_is_bound_to_the_selected_catalog_row(
         row = (await db.execute(select(AsyncTaskRecord).where(
             AsyncTaskRecord.task_id == "video-owned"))).scalar_one()
     assert row.endpoint_id == "openrouter.x.google-veo-3-1-lite"
+    assert row.key_slot == "primary", "the task names the account that accepted it"
 
 
 async def test_platform_model_selector_rejects_duplicate_json_keys(
@@ -789,7 +790,7 @@ async def test_legacy_platform_async_resources_are_recorded_and_authorized(
 
     async with session_maker() as db:
         records = (await db.execute(select(AsyncResourceRecord))).scalars().all()
-    assert records
+    assert records and {r.key_slot for r in records} == {"primary"}
 
 
 @pytest.mark.parametrize("url", [

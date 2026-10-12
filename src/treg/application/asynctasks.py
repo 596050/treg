@@ -26,6 +26,7 @@ from ..infra.money_session import money_session
 from ..infra.upstream.relay import relay
 from ..models import AsyncResourceRecord, AsyncTaskRecord, Hold, Tool
 from ..timeutil import utcnow_naive
+from .call import keyslots
 from .call.resolve import _host_of, _platform_bindings
 from .call.types import UpstreamRequest
 
@@ -64,7 +65,7 @@ async def defer_submission(mk, body: bytes, org_id: int, *, tags: dict | None = 
             endpoint_id=mk.endpoint_id, task_id=task_id, poll_url=poll_url,
             reserved_micro=hold.amount_micro, descriptor=_json_value(mk.async_descriptor or {}),
             settlement_basis=_json_value(mk.settlement_basis),
-            created_at=now, next_check_at=due, error=error,
+            created_at=now, next_check_at=due, error=error, key_slot=mk.key_slot,
         )
         db.add(row)
         if task_id is not None:
@@ -106,13 +107,13 @@ async def _remember_resource(db, row: AsyncTaskRecord, kind: str, resource_id: s
         db.add(AsyncResourceRecord(
             org_id=row.org_id, provider=row.provider, resource_kind=kind,
             resource_id=resource_id, source_call_id=row.call_id,
-            tags=dict(row.tags) if row.tags else None,
+            tags=dict(row.tags) if row.tags else None, key_slot=row.key_slot,
         ))
 
 
 async def remember_platform_resources(
     org_id: int, provider: str, call_id: str, rule: dict, body: bytes,
-    *, tags: dict | None = None,
+    *, tags: dict | None = None, key_slot: str | None = None,
 ) -> int:
     """Persist opaque ids a successful call created on treg's shared provider account."""
     try:
@@ -140,7 +141,7 @@ async def remember_platform_resources(
                 db.add(AsyncResourceRecord(
                     org_id=org_id, provider=provider, resource_kind=kind,
                     resource_id=resource_id, source_call_id=call_id,
-                    tags=dict(tags) if tags else None,
+                    tags=dict(tags) if tags else None, key_slot=key_slot,
                 ))
                 added += 1
         await db.commit()
@@ -285,9 +286,17 @@ async def _poll(row: AsyncTaskRecord, client: httpx.AsyncClient) -> tuple[int, b
     # forwards a URL's own query string nowhere), so a query-parameter poll (MiniMax v1
     # `?task_id=`) appended to the URL reached the provider empty - "invalid params" until the
     # 24-hour deadline. Path-parameter polls never showed it. Live 2026-09-02.
+    # The task exists only on the account that accepted it (`keyslots`); a retired account
+    # raises here and the row fails like any other unreachable poll. With no key at all the relay
+    # refuses the injection, as it always has.
+    account = None
+    if slots := keyslots.accounts(provider):
+        choice = keyslots.choose(slots, service=row.provider, endpoint_id=row.endpoint_id,
+                                 owners=(row.key_slot,))
+        account = choice.slot if choice.pooled else None
     tool = Tool(org_id=row.org_id, name=row.endpoint_id, owner="treg-worker",
                 base_url=provider.base_url, host=_host_of(provider.base_url),
-                bindings=_platform_bindings(provider))
+                bindings=_platform_bindings(provider, account))
 
     async def empty():
         if False:
