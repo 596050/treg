@@ -1316,8 +1316,10 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                     # places; a full provider hands the next free place to the team with the fewest
                     # calls in progress. Held until the answer is read, released on every path below.
                     try:
+                        # Each of treg's accounts has its own places (`keyslots.capacity_key`).
                         share_slot = await fair_share.acquire(
-                            mk.provider, caller.org_id, cap, max_wait_s=wait_s)
+                            keyslots.capacity_key(mk.provider, mk.key_slot), caller.org_id, cap,
+                            max_wait_s=wait_s)
                     except ShareBusy as busy:
                         raise GatewayFailed("share_busy", status_code=429, detail={
                             "error": "share_busy", "provider": mk.provider,

@@ -280,3 +280,32 @@ def test_error_bodies_mask_every_accounts_credential(two_tikhub_accounts):
                 bindings=oauth_providers.platform_bindings(provider, "b"))
     renderings = _secret_renderings(tool, {})
     assert TIKHUB_B in renderings and "PLATFORM-TIKHUB-KEY" in renderings
+
+
+async def test_concurrency_places_are_per_account_and_a_full_one_is_avoided(
+    clients: AsyncClient, two_tikhub_accounts, monkeypatch,
+):
+    """The primary's only place is taken by another team: the call goes to b instead of waiting
+    on, or being refused by, a full account."""
+    from treg.domain.capacity.fair_share import fair_share
+    from treg.domain.capacity.view import view as capacity_view
+    monkeypatch.setattr(capacity_view, "concurrency", lambda provider: 1 if provider == "tikhub" else 0)
+    monkeypatch.setenv("TREG_FAIR_SHARE_WAIT_S", "0.2")
+    get_settings.cache_clear()
+    fair_share.reset()
+    seen: list[str] = []
+
+    def upstream(request):
+        seen.append(request.headers["authorization"])
+        return _dropleads_response(200, {"comments": []})
+
+    other_team = await fair_share.acquire("tikhub", -1, 1)
+    try:
+        async with AsyncClient(transport=httpx.MockTransport(upstream)) as vendor:
+            monkeypatch.setattr(A.app.state, "http", vendor)
+            for i in range(3):
+                assert (await clients.get(f"/call/{EP}?aweme_id={i}")).status_code == 200
+    finally:
+        other_team.release()
+        fair_share.reset()
+    assert seen == [f"Bearer {TIKHUB_B}"] * 3

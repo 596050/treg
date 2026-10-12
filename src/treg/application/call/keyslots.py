@@ -27,6 +27,7 @@ import itertools
 
 from ... import oauth_providers
 from ...config import PRIMARY_SLOT, get_settings, platform_setting_name
+from ...domain.capacity.fair_share import fair_share
 from ...domain.capacity.view import view as capacity_view
 from ...infra.upstream.limiter import limiter
 from .types import ResolutionFailed
@@ -103,6 +104,12 @@ def capacity_slot(slot: str | None) -> str | None:
     return None if slot in (None, PRIMARY_SLOT) else slot
 
 
+def capacity_key(service: str, slot: str | None) -> str:
+    """The provider-wide capacity key of this account: the provider's own name for the primary."""
+    cap = capacity_slot(slot)
+    return f"{service}#{cap}" if cap else service
+
+
 def exhausted(service: str, endpoint_id: str, slot: str | None) -> bool:
     return capacity_view.is_exhausted(service, endpoint_id, capacity_slot(slot))
 
@@ -114,7 +121,8 @@ def all_exhausted(service: str, endpoint_id: str) -> bool:
 
 def assign(mk) -> None:
     """Give a platform call that resolution left open (`mk.key_slot is None`) its account: the
-    one not out of capacity whose smoothing bucket would wait least, ties rotating per provider.
+    one not out of capacity with a free concurrency place (`fair_share`) whose smoothing bucket
+    would wait least, ties rotating per provider.
     The caller takes that bucket's token before it next awaits, so a burst arriving together
     spreads instead of every call reading the same idle account."""
     if mk.key_slot is not None:
@@ -123,7 +131,8 @@ def assign(mk) -> None:
     slots = slots or _labels(mk.provider)
     start = next(_rotation.setdefault(mk.provider, itertools.count())) % len(slots)
     mk.key_slot = min(slots[start:] + slots[:start],
-                      key=lambda slot: _wait_s(mk.provider, mk.endpoint_id, slot))
+                      key=lambda slot: (fair_share.queued(capacity_key(mk.provider, slot)),
+                                        _wait_s(mk.provider, mk.endpoint_id, slot)))
     mk.tool.bindings = oauth_providers.platform_bindings(oauth_providers.get(mk.provider), mk.key_slot)
 
 
