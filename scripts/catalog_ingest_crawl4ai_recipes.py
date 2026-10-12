@@ -9,7 +9,7 @@ it rewrites only the two marked blocks (proposed capabilities, endpoints) and ke
 
     TREG_CATALOG_CRED=<crawl4ai key> uv run --frozen python scripts/catalog_ingest_crawl4ai_recipes.py
     ... --capture   also run every recipe once with its own example inputs and save the answer as
-                    the endpoint's example (0.15 credits a call; a failed call is free)
+                    the endpoint's example (its own price per call; a failed call is free)
     ... --from FILE read the recipe list from a saved `GET /recipes` answer instead of the API
 
 Recipes that only run as jobs (`run: job`) are left out: the catalog row is a single call. A
@@ -134,6 +134,63 @@ CAPABILITY = {
 }
 # Example inputs replaced where the recipe's own example trips the catalog's credential scan (a
 # Facebook pfbid post id reads like a token); the replacement is a public post of the same page.
+# treg's account price per call, in credits, for recipes priced on their own (the rest: DEFAULT_PRICE).
+PRICE = {
+    "x-profile": 0.2,
+    "coingecko-markets": 0.25,
+    "tiktok-profile": 0.35,
+    "x-user-tweets": 0.45,
+    "x-tweet-replies": 0.45,
+    "linkedin-jobs": 0.45,
+    "tiktok-user-videos": 0.5,
+    "tiktok-search": 0.5,
+    "tiktok-comments": 0.5,
+    "tiktok-post": 0.5,
+    "x-search": 0.65,
+    "instagram-comments": 0.7,
+    "instagram-profile": 0.9,
+    "instagram-posts": 0.9,
+    "instagram-reels": 0.9,
+    "instagram-hashtag": 0.9,
+    "instagram-search": 0.9,
+    "reddit-post-comments": 0.9,
+    "reddit-search": 0.9,
+    "reddit-subreddit": 0.9,
+    "reddit-user": 0.9,
+    "youtube-channel": 0.9,
+    "youtube-channel-videos": 0.9,
+    "youtube-search": 0.9,
+    "youtube-comments": 0.9,
+    "youtube-video": 0.9,
+    "telegram-channel": 0.9,
+    "tiktok-shop-product": 0.9,
+    "linkedin-profile": 0.9,
+    "linkedin-company": 0.9,
+    "linkedin-profile-posts": 0.9,
+    "linkedin-post-comments": 1.35,
+    "facebook-profile": 1.35,
+    "facebook-page-posts": 1.35,
+    "facebook-post": 1.35,
+    "facebook-marketplace-item": 1.35,
+    "amazon-product": 1.35,
+    "ebay-product": 1.35,
+    "walmart-product": 1.35,
+    "yelp-business": 1.35,
+    "trustpilot-reviews": 1.35,
+    "youtube-captions": 1.65,
+    "threads-profile": 1.65,
+    "facebook-event": 1.65,
+    "meta-ads-advertiser": 1.65,
+    "meta-ads-search": 1.65,
+    "github-repo": 1.65,
+    "github-trending": 1.65,
+    "chatgpt-answer": 3.2,
+    "linkedin-people-search": 3.6,
+    "linkedin-company-people": 3.6,
+    "amazon-search": 13.5,
+}
+DEFAULT_PRICE = 0.15
+
 EXAMPLE = {("facebook-post", "post"): "https://www.facebook.com/NASA/posts/1110592997763013"}
 TYPES = {"string": "string", "integer": "integer", "int": "integer", "number": "number", "float": "number",
          "boolean": "boolean", "bool": "boolean", "list": "array[string]",
@@ -220,10 +277,11 @@ def endpoint(r: dict, cap: str, today: str, captured: dict | None) -> dict:
         "body_allowlist": True,
         "input": {"bodyType": "json", "body": body},
         "cost": {
-            "type": "per_success", "value": 0.15, "currency": "credit", "per": 1, "unit": "call",
+            "type": "per_success", "value": PRICE.get(r["name"], DEFAULT_PRICE), "currency": "credit",
+            "per": 1, "unit": "call",
             "source": "observed", "source_url": f"{BASE}/recipes", "checked": today,
             "confidence": "verified",
-            "note": ("treg's account price: 0.15 credits a call whatever pages the run fetched, "
+            "note": (f"treg's account price: {PRICE.get(r['name'], DEFAULT_PRICE):g} credits a call whatever pages the run fetched, "
                      "second-source records included; a reply with no rows, a refused input and "
                      "a failed run are free. The x-c4-cost header settles the actual charge."),
         },
