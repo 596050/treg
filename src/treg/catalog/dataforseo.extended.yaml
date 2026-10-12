@@ -6667,7 +6667,8 @@ endpoints:
       order_by:
         type: array
         required: false
-        note: 'results sorting rules optional field you can use the same values as in the filters array to sort the results possible sorting types: asc – results will be sorted in the ascending order desc – results will be sorted in the descending order you should use a comma to specify a sorting type example: ["m'
+        note: 'Optional. Flat array of comma-separated "field,direction" strings (asc or desc). Field names match the filters array. Nested [["field","desc"]] (the filters-array shape) returns task status 40501 Invalid Field: ''order_by''.'
+        example: ["metrics.organic.etv,desc"]
       tag:
         type: string
         required: false
