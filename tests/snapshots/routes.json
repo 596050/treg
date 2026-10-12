@@ -1598,6 +1598,15 @@
       "GET",
       "HEAD"
     ],
+    "name": "usage_spend",
+    "path": "/orgs/{org_id}/usage/spend"
+  },
+  {
+    "kind": "APIRoute",
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
     "name": "org_balance",
     "path": "/orgs/{org_id}/balance"
   },
@@ -1876,6 +1885,15 @@
     ],
     "name": "list_api_keys",
     "path": "/orgs/{org_id}/api-keys"
+  },
+  {
+    "kind": "APIRoute",
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "name": "api_key_spend",
+    "path": "/orgs/{org_id}/api-keys/spend"
   },
   {
     "kind": "APIRoute",

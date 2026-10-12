@@ -3,6 +3,14 @@ export default {
 async loadApiKeys(){ if(!this.activeOrgId) return; this.keyErr=''; const live=this.ticket('apiKeys');
       try{ const keys=await this.api('/orgs/'+this.activeOrgId+'/api-keys'); if(live()) this.apiKeys=keys; }
       catch(e){ if(live()) this.keyErr='Could not load keys: '+(e.detail||e.status); } },
+// Billed spend per key over the last 30 days, from the daily spend rollup. A failed read leaves
+// the column blank rather than replacing the key list's own error.
+async loadApiKeySpend(){ this.apiKeySpend=null; if(!this.activeOrgId) return; const live=this.ticket('apiKeySpend');
+      const spend=await this.api('/orgs/'+this.activeOrgId+'/api-keys/spend').catch(()=>null);
+      if(live()) this.apiKeySpend=spend; },
+// null = nothing to show yet (loading, failed, or the rollup has not caught up): the cell says "—".
+keySpend(k){ const s=this.apiKeySpend; if(!s || !s.ready) return null;
+      return (s.keys||[]).find(row=>row.id===k.id)||{id:k.id,spent_micro:0,charges:0}; },
 async loadDefaultToken(){ const live=this.ticket('defaultToken');
       const issued=await this.api('/auth/cli-token').catch(()=>null);
       if(!live()) return;

@@ -155,6 +155,8 @@ jobs:
           tests/test_call_cancellation.py
           tests/test_call_pool_discipline.py
           tests/test_catalog_stats_refresh.py
+          tests/test_key_spend_rollup.py
+          tests/test_api_key_spend.py
           tests/test_api_keys.py
           tests/test_postgres_reset.py
           tests/test_read_replica.py

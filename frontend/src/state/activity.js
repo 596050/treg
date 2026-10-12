@@ -1,9 +1,23 @@
 
 export default {
 async loadUsage(){ if(!this.canAdmin || !this.activeOrgId) return; this.usage=null; const live=this.ticket('usage');
+      this.loadUsageSpend();  // its own request: the chart never waits for the counts
       try{ const usage=await this.api('/orgs/'+this.activeOrgId+'/usage?days='+this.usageDays); if(live()) this.usage=usage; }
       catch(e){ if(live()) this.err='Failed to load usage: '+(e.detail||e.status); }
       await this.loadTagUsage(); },
+// The spend chart reads only the daily spend rollup. It keeps its last answer on screen (dimmed)
+// while a filter change loads the next. Days are UTC.
+spendQuery(){ const r=this.spendRange, f=this.spendFilter, today=new Date().toISOString().slice(0,10);
+      const from=r.preset==='custom' ? r.from : new Date(Date.parse(today+'T00:00:00Z')-(r.preset-1)*864e5).toISOString().slice(0,10);
+      return 'from='+from+'&to='+(r.preset==='custom' ? r.to : today)+'&group='+f.group+'&stack='+f.stack+
+        (f.key?'&key='+f.key:'')+(f.provider?'&provider='+encodeURIComponent(f.provider):''); },
+async loadUsageSpend(){ if(!this.canAdmin || !this.activeOrgId) return; const live=this.ticket('usageSpend');
+      if(!this.spendFilter.provider) this.spendFilter.stack='key';
+      this.usageSpendBusy=true; this.usageSpendErr=''; this.spendRankPage=0;
+      try{ const spend=await this.api('/orgs/'+this.activeOrgId+'/usage/spend?'+this.spendQuery()); if(live()) this.usageSpend=spend; }
+      catch(e){ if(live()) this.usageSpendErr='Could not load spend: '+(e.detail||e.status); }
+      finally{ if(live()) this.usageSpendBusy=false; } },
+setSpendRange(value){ this.spendRange=value; this.loadUsageSpend(); },
 async loadTagUsage(){ if(!this.canAdmin || !this.activeOrgId) return;
       this.tagUsage={}; const live=this.ticket('tagUsage'), org=this.activeOrgId;
       try{

@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from ..application import key_spend
 from ..domain.governance import teams
 from ..domain.identity import api_keys as managed
 from ..domain.identity import session as identity_session
@@ -185,6 +186,32 @@ async def list_api_keys(
             safe_prefix,
         ))
     return views
+
+
+@router.get("/orgs/{org_id}/api-keys/spend")
+async def api_key_spend(
+    org_id: int,
+    caller: Caller = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Billed spend per key over the last 30 UTC days, from the daily spend rollup.
+
+    A member sees only their own keys, as on the list. The not-attributed line is team-wide ledger
+    detail, so it is admin+ like the ledger on `/orgs/{id}/balance`. `ready` is false until the
+    rollup has caught up once; the page shows no number until then.
+    """
+    if caller.org_id != org_id:
+        raise HTTPException(status_code=403, detail="use this team's credential")
+    since = key_spend.first_day(utcnow_naive().date(), key_spend.WINDOW_DAYS)
+    state = await key_spend.history(db)
+    if not state["ready"]:
+        return {"ready": False, "days": key_spend.WINDOW_DAYS, "since": since.isoformat(), "keys": [], "unattributed": None}
+    admin = _admin(caller)
+    spend = await key_spend.spend_by_key(db, org_id, since, membership_id=None if admin else caller.membership.id)
+    rows = sorted(({"id": key_id, **line} for key_id, line in spend["keys"].items()),
+                  key=lambda row: (-row["spent_micro"], row["id"]))
+    return {"ready": True, "days": key_spend.WINDOW_DAYS, "since": since.isoformat(), "keys": rows,
+            "unattributed": spend["unattributed"]}
 
 
 @router.post("/orgs/{org_id}/api-keys")
