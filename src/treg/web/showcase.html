@@ -128,7 +128,8 @@
 
   /* ---------- the gallery ---------- */
   .gallery { padding-top: 90px; scroll-margin-top: 40px; }
-  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 22px; }
+  /* rows sit far apart and a tile's parts sit close, so a maker reads as their own app's, never the next row's */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 44px 22px; }
   .app { grid-column: span var(--span, 6); display: flex; flex-direction: column; scroll-margin-top: 90px; }
   .grid.filtered .app { grid-column: span 6; }
   .app[hidden] { display: none; }
@@ -165,7 +166,6 @@
   .meta p { grid-column: 1 / -1; margin: 0; color: #55534F; font-size: 15px; max-width: 62ch; }
   .maker {
     grid-column: 1 / -1; margin-top: 12px; display: flex; align-items: center; gap: 11px;
-    padding-top: 14px; border-top: 1px solid var(--line);
   }
   .avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex: none; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
   .avatar.mono { display: grid; place-items: center; font: 600 14px var(--display); color: #fff; background: var(--ink); }
@@ -181,7 +181,7 @@
   .app.leaving { opacity: 0; transform: scale(.98); }
   ::view-transition-group(*) { animation-duration: .45s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
 
-  @media (max-width: 860px) { .app, .grid.filtered .app { grid-column: 1 / -1; } .stage { padding: 10px 10px 0; height: auto; aspect-ratio: 16 / 10; } }
+  @media (max-width: 860px) { .grid { row-gap: 36px; } .app, .grid.filtered .app { grid-column: 1 / -1; } .stage { padding: 10px 10px 0; height: auto; aspect-ratio: 16 / 10; } }
 
   /* ---------- launch posts ---------- */
   .posts { padding-top: 130px; }
