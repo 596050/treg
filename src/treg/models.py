@@ -2052,6 +2052,52 @@ class EndpointStatCursor(SQLModel, table=True):
     updated_at: NaiveUTC = Field(default_factory=_now)
 
 
+class ApiKeySpendDay(SQLModel, table=True):
+    """One team's billed spend through one API key on one tool on one UTC day: the read model behind
+    the Team page's "Spent" column and the Usage page's spend chart. Folded from the ledger's
+    `settle` entries by `application.key_spend_rollup` (the `treg-worker spend rollup` cron), which
+    is this table's only writer; team deletion clears it with the team. The pages read a few
+    hundred of these rows instead of every settle entry of the window plus its audit row.
+
+    The money is the ledger's; the audit row only names the key (`docs/context/architecture/money.md`,
+    "Spend per API key"). `api_key_id = 0` is the team's one "not attributed" line for the day:
+    a charge whose call has no keyed audit row. `charges` counts settle entries, not calls: a
+    routed call or an overflow hold settles more than once.
+    """
+
+    org_id: int = Field(foreign_key="org.id", primary_key=True)
+    day: str = Field(primary_key=True)  # YYYY-MM-DD, UTC, from LedgerEntry.created_at
+    api_key_id: int = Field(primary_key=True)  # 0 = not attributed; no foreign key, a key row may go
+    endpoint_id: str = Field(primary_key=True)  # LedgerEntry.endpoint_id; "" when the entry has none
+    spent_micro: int = Field(default=0, sa_column=Column(BigInteger, nullable=False))
+    charges: int = Field(default=0)
+    updated_at: NaiveUTC = Field(default_factory=_now)
+
+
+class ApiKeySpendCursor(SQLModel, table=True):
+    """Where `application.key_spend_rollup` has got to in the ledger. One row (`id = "ledger"`).
+
+    Ledger ids are random, so the position is the pair `(watermark_at, watermark_id)`: the last
+    folded settle entry in `(created_at, id)` order. `history_from` is the first UTC day the rollup
+    holds; nothing reads before it. `caught_up_at` is NULL until a run drains the first backfill,
+    and the pages say spend history is being prepared until then. `recounted_on` is the UTC day the daily recount
+    last finished; the `recount_*` columns are the lease and progress of the one in flight.
+    """
+
+    id: str = Field(primary_key=True)
+    watermark_at: NaiveUTC
+    watermark_id: str = Field(default="")
+    history_from: str  # YYYY-MM-DD
+    caught_up_at: NaiveUTC | None = Field(default=None)
+    recounted_on: str | None = Field(default=None)
+    # The recount in progress: its day, the last team done, and the run holding it until when.
+    recount_day: str | None = Field(default=None)
+    recount_after_org: int = Field(default=0)
+    recount_owner: str | None = Field(default=None)
+    recount_lease_until: NaiveUTC | None = Field(default=None)
+    updated_at: NaiveUTC = Field(default_factory=_now)
+
+
 class OnboardingProfile(SQLModel, table=True):
     """One new user's first-run lookup: what was found about them, the ranked first tasks and their
     filled-in inputs. One row per user, ever; `application.onboarding` is its only writer. The

@@ -51,6 +51,7 @@ sources:
   - src/treg/alembic/versions/0056_searchlog_verdict.py
   - src/treg/alembic/versions/0065_call_verdict.py
   - src/treg/alembic/versions/0066_endpointdaystat_verdicts.py
+  - src/treg/alembic/versions/0070_api_key_spend_rollup.py
   - src/treg/timeutil.py
   - src/treg/infra/db.py
   - src/treg/infra/money_timing.py
@@ -322,6 +323,14 @@ uses this metadata, never the encrypted token's shape.
   `(org_id, created_at, id) WHERE kind = 'local_run'` (revision 0054); without them the first
   walked the primary key testing `org_id` and the second read the team's whole history. The
   Activity feed's calls page by time on `(org_id, created_at)`.
+
+  **Spend per API key is the ledger's, folded the same way.** Revision 0070 adds `ApiKeySpendDay`
+  (team + API key + tool + UTC day -> `spent_micro`, `charges`; primary key
+  `(org_id, day, api_key_id, endpoint_id)`, `api_key_id = 0` for the not-attributed line) and the
+  single-row `ApiKeySpendCursor` (a `(created_at, id)` watermark, `history_from`, `caught_up_at`,
+  `recounted_on`). `application/key_spend_rollup.py`, run as `treg-worker spend rollup`, is the
+  only writer of both, and the Team and Usage pages read only them; see [money](money.md) § Spend
+  per API key. Team deletion clears a team's rows.
 
   `refused_by` distinguishes a treg refusal (`auth`, `policy`, `balance`, `cap`, `resolution`,
   `request`, and other mechanism-specific values) from an upstream answer, where it is null.

@@ -13,6 +13,7 @@ from ...models import (
     AdConversion,
     ApiKey,
     ApiKeyEvent,
+    ApiKeySpendDay,
     ArchiveEndpointStat,
     ArchiveKey,
     ArchiveKeyOrg,
@@ -254,6 +255,7 @@ ORG_SCOPED_MODELS = (
     ArenaEvaluation, ArenaRun, WebArenaRun,
     Tool, Secret, Bundle, PendingOAuth, CallRecord, RunRecord, Invite, DenyRule, Project,
     ApiKeyEvent, ApiKey,
+    ApiKeySpendDay,  # the spend rollup: a deleted team's history goes with it
     CapabilityPin,
     TagBudget,
     TagSpend,  # before the money tables it attributes: its rows reference a Hold that is about to go
