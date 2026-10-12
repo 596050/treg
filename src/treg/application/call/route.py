@@ -48,7 +48,7 @@ from ...domain.catalog.routing.plan import (
     MAX_ERROR_FALLBACKS, Candidate, Plan, candidates_for, cost_at, ignored_filters, rank, unscoped,
 )
 from .. import asynctasks as async_task_app
-from . import async_bridge
+from . import async_bridge, keyslots
 from .intake import _tag_telemetry
 from .resolve import _anonymous_offer, _host_of, _marketplace_secret
 from .settle import close_deferred
@@ -311,7 +311,7 @@ async def build_plan(ep: dict, identity_given: dict, caller, options: RouteOptio
             "platform"
         )
         cv = cat.cost_view(e.get("cost"), e["provider"])
-        direct_exhausted = tier == "platform" and capacity_view.is_exhausted(e["provider"], e["id"])
+        direct_exhausted = tier == "platform" and keyslots.all_exhausted(e["provider"], e["id"])
         overflow_route = None
         if (direct_exhausted and get_settings().overflow_mode == "on"
                 and not getattr(caller.org, "platform_overflow_disabled", False)):

@@ -96,6 +96,12 @@ class FairShare:
     def __init__(self) -> None:
         self._pools: dict[str, _Pool] = {}
 
+    def queued(self, provider: str) -> int:
+        """Calls in progress or waiting on `provider` beyond its places, 0 when it has room: how a
+        provider with several accounts sends a call where a place is free. Sync, takes nothing."""
+        pool = self._pools.get(provider)
+        return 0 if pool is None else max(0, pool.active + len(pool.line) - pool.cap + 1)
+
     def _pool(self, provider: str, cap: int) -> _Pool:
         pool = self._pools.get(provider)
         if pool is None:

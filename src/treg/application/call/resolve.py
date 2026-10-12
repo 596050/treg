@@ -18,7 +18,7 @@ from sqlmodel import select
 
 from ... import oauth, oauth_providers
 from ... import sandbox as demo_sandbox
-from ...config import get_settings, platform_setting_name
+from ...config import get_settings
 from ...domain.capacity import marks as capacity_marks
 from ...domain.capacity.routes_view import view as overflow_routes_view
 from ...domain.capacity.view import view as capacity_view
@@ -33,6 +33,8 @@ from ...infra.db import session_maker
 from ...domain.governance.access import pinned_tag_predicates
 from ...models import AsyncResourceRecord, AsyncTaskRecord, CapabilityPin, Org, Secret, Tool
 from ..connect import _host_of, _provider_bindings
+from . import keyslots
+from .idempotency import _IDEM_SCOPE_SEP, IDEMPOTENCY_HEADER, _idempotency_key
 from .types import ResolutionFailed, ResolvedTarget
 
 
@@ -351,6 +353,9 @@ class MarketplaceCall:
     # Admitted through an active capacity lock as its probe (domain.capacity.marks): a 2xx clears
     # exactly that lock.
     probe_lock_id: str | None = None
+    # Which of treg's accounts for the provider serves this platform call (`keyslots`); None until
+    # the call path picks one when resolution left the choice open.
+    key_slot: str | None = None
     # A routed child: settle into this list instead of the ledger (CallContext.deferred_settles).
     deferred: list | None = None
 
@@ -1037,42 +1042,6 @@ def _params_hash(endpoint_id: str, query_items: list[tuple[str, str]], body: byt
     return h.hexdigest()
 
 
-def _platform_bindings(provider) -> list[dict]:
-    """Tier 4's injection: the SAME header/param shape a pasted key of this provider gets
-    (`_provider_bindings`), except the value is named rather than carried — `relay` reads
-    `platform_setting` from settings at call time. That is the whole security model: treg's key is
-    never written to a Secret row (unreadable by the tenant, unexportable by a local run, and
-    `api.py`'s cross-org secret check would reject it anyway).
-
-    `token_encode` is carried for HTTP Basic providers so the injector can ensure Base64 encoding,
-    matching `_provider_bindings` for tiers 1/2. Platform settings should already be encoded, but
-    carrying the attribute costs nothing and keeps the contract explicit."""
-    setting = platform_setting_name(provider.service)
-    encode_attr = {"token_encode": provider.token_encode} if provider.token_encode else {}
-    if provider.token_location in {"query", "json"}:
-        bindings = [{"platform_setting": setting, "injector": "env", "location": provider.token_location,
-                     "name": provider.token_param, "format": provider.token_format, **encode_attr}]
-    else:
-        bindings = [{"platform_setting": setting, "injector": "env", "location": "header",
-                     "name": provider.token_header, "format": provider.token_format, **encode_attr}]
-    # Keep tier 4 protocol-identical to BYOK. Required provider headers are constants, but they
-    # still use the same platform setting reference so the normal binding validator and injector
-    # own the whole shape. Crustdata's x-api-version pin is the first provider that needs this.
-    source = {k: v for k, v in bindings[0].items()
-              if k in ("platform_setting", "injector", "secret_field")}
-    bindings.extend({**source, "location": "header", "name": name, "format": value}
-                    for name, value in provider.required_headers)
-    # A per-user credential PAIR (Tomba's key+secret headers) needs treg's own second half on
-    # tier 4. platform_extra_setting is tier-4-only by design: extra_credential_setting would also
-    # ride user connects, pairing a user's key with treg's secret — a pair the provider rejects.
-    if provider.needs_extra_credential and provider.platform_extra_setting:
-        bindings.append({"platform_setting": provider.platform_extra_setting, "injector": "env",
-                         "location": provider.extra_credential_location,
-                         "name": provider.extra_credential_name,
-                         "format": "{secret}"})
-    return bindings
-
-
 def _platform_offer(ep: dict, provider, org: Org) -> dict | None:
     """May tier 4 serve `ep` for this org, and at what price? The cost view when yes, None when no.
 
@@ -1753,19 +1722,22 @@ def _managed_values(ep: dict, rule: dict, query: QueryValues, body: bytes, heade
 
 async def _enforce_platform_managed_ownership(
     ep: dict, query: QueryValues, body: bytes, headers, caller: Caller, db: AsyncSession,
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str | None, ...]]:
+    """(public ids looked up on any account, key slots of the org's own resources acted on)."""
     rule = ep.get("managed_resource") or {}
     operation = rule.get("operation")
     if not rule or operation == "create":
-        return ()
+        return (), ()
     values = _managed_values(ep, rule, query, body, headers)
     public_ids: list[str] = []
+    owners: list[str | None] = []
     for upstream_id in values:
         row = await provider_resources.owned(
             db, caller.org_id, ep["provider"], str(rule.get("kind") or ""), upstream_id,
             include_deleted=operation == "delete",
         )
         if row is not None:
+            owners.append(row.key_slot)
             continue
         # A resource assigned to another org (or tombstoned by this one) is private even when the
         # provider also has a public catalog. Deny it locally; never ask the shared account about a
@@ -1785,7 +1757,7 @@ async def _enforce_platform_managed_ownership(
             detail={"error": "provider_resource_not_owned",
                     "message": "resource is not owned by this organization"},
         )
-    return tuple(public_ids)
+    return tuple(public_ids), tuple(owners)
 
 
 def _async_resource_refs(ep: dict) -> list[tuple[str, dict]]:
@@ -1835,30 +1807,32 @@ def _descriptor_ref(descriptor: dict, kind: str) -> tuple[str, dict]:
 
 async def _enforce_platform_async_ownership(
     ep: dict, query: QueryValues, body: bytes, caller: Caller, db: AsyncSession,
-) -> str | None:
-    """Authorize shared-key task/result utilities through the caller org's durable submission."""
+) -> tuple[str | None, tuple[str | None, ...]]:
+    """Authorize shared-key task/result utilities through the caller org's durable submission.
+    Returns (the owning submission when this is its poll, the key slot of the row that authorized
+    the call; empty when nothing had to)."""
     ownership = ep.get("resource_ownership") or {}
     required = ownership.get("requires") or {}
-    resource_owned = False
+    resource_slot: tuple[str | None, ...] = ()  # (the owning row's key slot,) when it exists
     if required:
         value = _one_resource_value(
             ep, query,
             [("resource", {"name": required.get("param"), "in": required.get("in")})],
             body,
         )
-        resource_owned = (await db.execute(select(AsyncResourceRecord.id).where(
+        resource_slot = tuple((await db.execute(select(AsyncResourceRecord.key_slot).where(
             AsyncResourceRecord.org_id == caller.org_id,
             *pinned_tag_predicates(AsyncResourceRecord.tags, caller.membership.pinned_tags),
             AsyncResourceRecord.provider == ep["provider"],
             AsyncResourceRecord.resource_kind == required.get("kind"),
             AsyncResourceRecord.resource_id == value,
-        ))).scalar_one_or_none() is not None
+        ))).first() or ())
 
     refs = _async_resource_refs(ep)
     if not refs:
-        if required and not resource_owned:
+        if required and not resource_slot:
             raise _async_resource_denied(caller)
-        return None
+        return None, resource_slot
     value = _one_resource_value(ep, query, refs, body)
     candidates = (await db.execute(select(AsyncTaskRecord).where(
         AsyncTaskRecord.org_id == caller.org_id,
@@ -1872,7 +1846,7 @@ async def _enforce_platform_async_ownership(
             if endpoint_id != ep["id"] or frozen_param != current_param:
                 continue
             if kind == "poll" and row.task_id == value:
-                return row.call_id
+                return row.call_id, (row.key_slot, *resource_slot)
             if kind == "fetch":
                 result = (row.descriptor or {}).get("result") or {}
                 same_as_task = (
@@ -1881,9 +1855,9 @@ async def _enforce_platform_async_ownership(
                     == (row.descriptor or {}).get("id_from")
                 )
                 if row.result_id == value or same_as_task:
-                    return None
-    if resource_owned:
-        return None
+                    return None, (row.key_slot, *resource_slot)
+    if resource_slot:
+        return None, resource_slot
     raise _async_resource_denied(caller)
 
 
@@ -2240,6 +2214,8 @@ async def _resolve_marketplace_call(
     # silently switched onto our key (their quota, their rate limits, their data agreements).
     cost = _platform_offer(ep, provider, caller.org)
     async_owner_call_id = None
+    async_owners: tuple[str | None, ...] = ()
+    resource_owners: tuple[str | None, ...] = ()
     if cost is not None:
         _enforce_platform_request(ep, body, request_headers, query)
         if service == "sumble":
@@ -2269,19 +2245,29 @@ async def _resolve_marketplace_call(
                         "parameter": name, "expected": expected,
                         "message": f"{ep['id']} requires {name}={expected!r}; use the matching catalog tool.",
                     })
-        async_owner_call_id = await _enforce_platform_async_ownership(ep, query, body, caller, db)
-        public_resource_ids = await _enforce_platform_managed_ownership(
+        async_owner_call_id, async_owners = await _enforce_platform_async_ownership(
+            ep, query, body, caller, db)
+        public_resource_ids, resource_owners = await _enforce_platform_managed_ownership(
             ep, query, body, request_headers, caller, db)
     skip_direct = False
     probe_lock_id = None
-    if cost is not None and capacity_view.is_exhausted(service, ep["id"]):
+    key_slot = None
+    if cost is not None:
+        # None: any of treg's accounts may serve it; the call path picks one before the relay.
+        key_slot = keyslots.pinned(
+            service, owners=async_owners + resource_owners,
+            idempotency_key=_key_affinity(caller, request_headers))
+    if cost is not None and (keyslots.exhausted(service, ep["id"], key_slot) if key_slot is not None
+                             else keyslots.all_exhausted(service, ep["id"])):
         # treg's own account for this call is known to be out (the call-path lock, or the sweep).
         # Either admits one probe a minute so a recovered account is noticed. Otherwise never
         # relay a call we know will 402: with an enabled overflow route the ladder skips straight
         # to the child cycle (plan §4); else refuse BEFORE reserve with a typed 503 naming when
-        # and what else (§4.2).
-        lock = capacity_view.active_lock(service, ep["id"])
-        state = capacity_view.get(service) if lock is None else None
+        # and what else (§4.2). With every account out, the probe goes to the primary.
+        key_slot = key_slot or keyslots.PRIMARY_SLOT
+        cap_slot = keyslots.capacity_slot(key_slot)
+        lock = capacity_view.active_lock(service, ep["id"], cap_slot)
+        state = capacity_view.get(service) if lock is None and cap_slot is None else None
         if lock is not None and capacity_marks.probe_due(lock.key):
             probe_lock_id = lock.lock_id
         elif state is not None and capacity_marks.sweep_probe_due(service, state.observed_at):
@@ -2291,20 +2277,28 @@ async def _resolve_marketplace_call(
             skip_direct = True
         else:
             raise _provider_capacity_unavailable(
-                ep, service, capacity_view.exhausted_until(service, ep["id"]), probing=True)
+                ep, service, capacity_view.exhausted_until(service, ep["id"], cap_slot), probing=True)
     if cost is not None:
         virtual = Tool(
             org_id=caller.org_id, name=ep["id"], owner=caller.email,
             base_url=provider.base_url, host=_host_of(provider.base_url),
-            bindings=_platform_bindings(provider),
+            bindings=oauth_providers.platform_bindings(provider, key_slot),
         )
         return MarketplaceCall(tool=virtual, tier="platform", skip_direct=skip_direct,
                                async_owner_call_id=async_owner_call_id,
                                public_resource_ids=public_resource_ids,
-                               probe_lock_id=probe_lock_id, **{
+                               probe_lock_id=probe_lock_id,
+                               key_slot=key_slot, **{
             **common, "cost_type": str(cost.get("type") or "per_call"),
             "estimate_micro": info_est, "unit_micro": info_unit})
     raise _marketplace_no_credential(service, ep["id"], provider, ep)
+
+
+def _key_affinity(caller: Caller, headers) -> str:
+    """The caller's Idempotency-Key, scoped to the org: what pins a retry to one of treg's
+    accounts (`keyslots`). Empty without the header."""
+    key = _idempotency_key(headers.get(IDEMPOTENCY_HEADER) if headers is not None else None)
+    return f"{caller.org_id}{_IDEM_SCOPE_SEP}{key}" if key else ""
 
 
 def _provider_capacity_unavailable(ep: dict, service: str, resets, *,

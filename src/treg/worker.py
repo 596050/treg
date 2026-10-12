@@ -243,7 +243,9 @@ async def _overflow_verify(args) -> int:
 async def _asynctasks_settle(args) -> int:
     from .infra.db import verify_db
     from .application.asynctasks import settle_due
+    from .application.call import keyslots
 
+    keyslots.check_accounts()  # polls use treg's accounts: an unusable one refuses to start
     await verify_db()
     result = await settle_due(limit=args.limit)
     print(json.dumps(result.__dict__, sort_keys=True))
@@ -260,6 +262,8 @@ async def _hub_check(args) -> int:
     from .application.hub.health import check_as_maker
     from .infra.db import session_maker, verify_db
     from .models import HubTool
+    from .application.call import keyslots
+    keyslots.check_accounts()  # checks make platform calls: an unusable account refuses to start
     await verify_db()
     if not hub_enabled():
         print("hub is off (TREG_HUB_ENABLED); nothing to check")

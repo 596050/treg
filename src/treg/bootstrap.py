@@ -765,6 +765,9 @@ def create_app(role: AppRole = "all", *, archive_object_store=None) -> FastAPI:
 
     # Deferred to avoid a cycle: api.py defines the router, then calls this factory for api:app.
     from . import api as api_module
+    from .application.call import keyslots
+
+    keyslots.check_accounts()  # an unusable TREG_PLATFORM_ACCOUNTS entry refuses to start
 
     expose_docs = role != "dataplane"
     app = FastAPI(

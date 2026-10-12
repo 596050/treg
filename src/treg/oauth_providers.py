@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from urllib.parse import urlsplit
 
-from .config import platform_setting_name, get_settings
+from .config import PRIMARY_SLOT, platform_setting_name, get_settings
 from .domain.connections import authorization as connection_authorization
 
 
@@ -208,7 +208,7 @@ class OAuthProvider:
     # TIER 4 ONLY: settings attribute holding treg's own second credential for platform-served
     # calls, when the extra credential is PER-USER (extra_credential_setting stays empty so a
     # user's connect never rides treg's half of the pair — Tomba rejects a mismatched key/secret).
-    # `_platform_bindings` appends it as a second header binding; user connections are untouched.
+    # `platform_bindings` appends it as a second header binding; user connections are untouched.
     platform_extra_setting: str = ""
 
     # Some providers bill the OWNER OF THE APP per use, whoever's token made the call — X moved to
@@ -4264,19 +4264,25 @@ def listing() -> list[dict]:
 # Moved from api.py (2026-08-27) so BOTH callers — the relay path in api and the archive's
 # refresh worker — reach the ONE authoritative builder without the worker importing api
 # (the routers→api import boundary forbids that chain).
-def platform_bindings(provider) -> list[dict]:
+def platform_bindings(provider, account: str | None = None) -> list[dict]:
     """Tier 4's injection: the SAME header/param shape a pasted key of this provider gets
     (`_provider_bindings`), except the value is named rather than carried — `relay` reads
     `platform_setting` from settings at call time. That is the whole security model: treg's key is
     never written to a Secret row (unreadable by the tenant, unexportable by a local run, and
-    `api.py`'s cross-org secret check would reject it anyway)."""
+    `api.py`'s cross-org secret check would reject it anyway).
+
+    `token_encode` is carried for HTTP Basic providers so the injector can ensure Base64 encoding,
+    matching `_provider_bindings` for tiers 1/2. `account` names which of treg's accounts for the
+    provider the relay injects (`application/call/keyslots.py`); the primary is the deployment's
+    own fields and carries none."""
     setting = platform_setting_name(provider.service)
+    encode_attr = {"token_encode": provider.token_encode} if provider.token_encode else {}
     if provider.token_location in {"query", "json"}:
         bindings = [{"platform_setting": setting, "injector": "env", "location": provider.token_location,
-                     "name": provider.token_param, "format": provider.token_format}]
+                     "name": provider.token_param, "format": provider.token_format, **encode_attr}]
     else:
         bindings = [{"platform_setting": setting, "injector": "env", "location": "header",
-                     "name": provider.token_header, "format": provider.token_format}]
+                     "name": provider.token_header, "format": provider.token_format, **encode_attr}]
     # Keep tier 4 protocol-identical to BYOK. Required provider headers are constants, but they
     # still use the same platform setting reference so the normal binding validator and injector
     # own the whole shape. Crustdata's x-api-version pin is the first provider that needs this.
@@ -4292,4 +4298,6 @@ def platform_bindings(provider) -> list[dict]:
                          "location": provider.extra_credential_location,
                          "name": provider.extra_credential_name,
                          "format": "{secret}"})
+    if account not in (None, PRIMARY_SLOT):
+        bindings = [{**b, "account": f"{provider.service}/{account}"} for b in bindings]
     return bindings

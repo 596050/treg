@@ -33,6 +33,7 @@ from ...infra.upstream.limiter import limiter as provider_limiter
 from ...infra.upstream.relay import identify_as_treg, relay, scope_shared_idempotency_key
 from .. import asynctasks as async_task_app
 from ...domain import asynctasks as asynctasks_rules
+from . import keyslots
 from .authorize import authorize_call, enforce_public_demo_limit
 from .evidence import (
     _ERROR_BODY_SLICE,
@@ -503,7 +504,7 @@ async def _apply_managed_resource_result(
                     resource_db, org_id=caller.org_id, provider=mk.provider,
                     resource_kind=str(rule.get("kind") or ""), upstream_id=upstream_id,
                     display_name=display_name, created_by=caller.email,
-                    source_call_id=call_ref,
+                    source_call_id=call_ref, key_slot=mk.key_slot,
                 )
                 await resource_db.commit()
         except provider_resources.ResourceCollision as exc:
@@ -989,7 +990,8 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
             props |= {"provider": mk.provider, "endpoint_id": mk.endpoint_id,
                       "tier": mk.tier, "metered": mk.metered, "cost_type": mk.cost_type,
                       "charged_micro": charged_micro, "observed_micro": observed_micro,
-                      "capacity_signal": capacity_signal, "probe": mk.probe_lock_id is not None}
+                      "capacity_signal": capacity_signal, "probe": mk.probe_lock_id is not None,
+                      "key_slot": mk.key_slot}
         else:
             props["provider"] = urlsplit(upstream_url).hostname or ""
         if defer_analytics:
@@ -1234,7 +1236,10 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 # would exceed the provider's published rate waits briefly (≤ 2 s, in-process, no DB —
                 # the DB phase ended above) instead of being relayed into a 429 nobody can fix. Beyond
                 # the cap it proceeds as before; nothing is ever refused here.
-                rl = capacity_view.rate_bucket(mk.provider, mk.endpoint_id)
+                # The account, when resolution left it open, is picked here and its token taken
+                # below with no await between: a burst arriving together spreads over the accounts.
+                keyslots.assign(mk)
+                rl = keyslots.rate_bucket(mk.provider, mk.endpoint_id, mk.key_slot)
                 if rl is not None:
                     waited = await provider_limiter.acquire(*rl)
                     if waited:
@@ -1311,8 +1316,10 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                     # places; a full provider hands the next free place to the team with the fewest
                     # calls in progress. Held until the answer is read, released on every path below.
                     try:
+                        # Each of treg's accounts has its own places (`keyslots.capacity_key`).
                         share_slot = await fair_share.acquire(
-                            mk.provider, caller.org_id, cap, max_wait_s=wait_s)
+                            keyslots.capacity_key(mk.provider, mk.key_slot), caller.org_id, cap,
+                            max_wait_s=wait_s)
                     except ShareBusy as busy:
                         raise GatewayFailed("share_busy", status_code=429, detail={
                             "error": "share_busy", "provider": mk.provider,
@@ -1371,7 +1378,7 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                     try:
                         await async_task_app.remember_platform_resources(
                             caller.org_id, mk.provider, call_ref, mk.resource_ownership, body,
-                            tags=meta.tags)
+                            tags=meta.tags, key_slot=mk.key_slot)
                     except Exception:  # noqa: BLE001 - failure keeps later access fail-closed
                         logging.getLogger("treg.asynctasks").warning(
                             "could not persist async resource ownership for %s", call_ref,

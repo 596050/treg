@@ -107,6 +107,11 @@ for legacy async pairs whose billing does not use a deferred hold. They ship wit
 because old code ignores the additions while new code cannot safely retain an asynchronous hold or
 authorize a shared-provider result without them.
 
+Revision `0069` adds nullable `key_slot` to `AsyncTaskRecord`, `AsyncResourceRecord` and
+`ProviderResource`: the label of the treg-owned account the object lives on, so its polls, fetches
+and edits use that account ([proxy model](proxy-model.md), "Several treg-owned accounts"). NULL is
+every earlier row and means the primary account.
+
 Revision `0052` adds nullable `hit`: the terminal contact verdict for the original submission.
 The terminal finalizer commits it with settlement. The audit writer locks the task row before
 inserting a submission `CallRecord`, so a poll that finishes first still gives that row its final
