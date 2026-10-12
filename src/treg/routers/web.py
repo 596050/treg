@@ -197,7 +197,7 @@ def _page(title: str, description: str, path: str, body: str, ld: list[dict],
     # The job, workflow and agent pages exist on the hosted deployment only (`_hosted`): a
     # self-hosted registry must not put three 404s in its own footer.
     hub_links = ('<a href="/use-cases">Use cases</a><a href="/workflows">Workflows</a>'
-                 '<a href="/gtm-engineering">GTM engineering</a>'
+                 '<a href="/gtm-engineering">GTM engineering</a><a href="/showcase">Showcase</a>'
                  '<a href="/agents">Agents</a><a href="/blog">Blog</a>' if _hosted() else "")
     return HTMLResponse(f"""<!doctype html>
 <html lang="en">
@@ -3542,6 +3542,7 @@ async def sitemap_xml():
             add(f"/workflows/{w}", copy_day, "0.7")
         hub = _WEB_DIR / "gtm-engineering.html"
         add("/gtm-engineering", _iso_day(hub.stat().st_mtime) if hub.exists() else "", "0.8")
+        add("/showcase", _iso_day((_WEB_DIR / "showcase.html").stat().st_mtime), "0.8")
     out.append("</urlset>")
     return Response("\n".join(out), media_type="application/xml; charset=utf-8",
                     headers={"Cache-Control": "max-age=3600"})
@@ -3903,6 +3904,16 @@ async def ugc_page(request: Request):
     return _static_page("ugc.html", request)
 
 
+@app.get("/showcase", include_in_schema=False)
+async def showcase_page(request: Request):
+    """The gallery of products built on treg: each app, its maker and the maker's launch post,
+    then a one-off snapshot of posts about treg on X (media/showcase/wall.json). Relative asset
+    paths (media/showcase/…). Hosted only, like /gtm-engineering: the apps run on treg.to itself."""
+    if not _hosted():
+        raise HTTPException(status_code=404, detail="not found")
+    return _static_page("showcase.html", request)
+
+
 @app.get("/people-search", include_in_schema=False)
 async def people_search_page(request: Request):
     """Landing page for the people-search launch ("Claude for people search") — the destination the
@@ -4029,6 +4040,8 @@ async def jev_xboost_judge(request: Request, db: AsyncSession = Depends(get_sess
 # chronological (newest first), not alphabetical.
 _BLOG_LAUNCHES: list[tuple[str, str, str, str]] = [
     # (slug, title, date, one-line blurb)
+    ("/showcase", "Built with treg", "2026-10-12",
+     "Apps whose agents reach the outside world through treg, the people who made them, and their launch posts."),
     ("/gtm-engineering", "The GTM Engineering Playbook", "2026-09-30",
      "16 chapters from ICP to rollout: a prompt and a rule in each, and the data steps tested on recorded runs."),
     ("/leads-signals", "Claude for Monitor Leads Signal", "2026-09-28",

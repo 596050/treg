@@ -190,6 +190,7 @@ _CONTROL_ROUTE_KEYS: frozenset[RouteKey] = frozenset({
     ('/astra', ('GET',), 'astra_page'),
     ('/gpt6', ('GET',), 'gpt6_page'),
     ('/ugc', ('GET',), 'ugc_page'),
+    ('/showcase', ('GET',), 'showcase_page'),
     ('/people-search', ('GET',), 'people_search_page'),
     ('/leads-signals', ('GET',), 'leads_signals_page'),
     ('/gtm-engineering', ('GET',), 'gtm_engineering_page'),

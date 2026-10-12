@@ -996,6 +996,15 @@
       "GET",
       "HEAD"
     ],
+    "name": "showcase_page",
+    "path": "/showcase"
+  },
+  {
+    "kind": "APIRoute",
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
     "name": "people_search_page",
     "path": "/people-search"
   },
