@@ -474,7 +474,10 @@ refusal:
    then proceeds regardless; the hold is already placed, so the org pays latency, never money. The
    limit comes from the capacity view (`view.rate_limit`: published by the sweep from
    `CapacityPolicy.rate_limit`, with the verified defaults - leadsforge 120/min, leadmagic 300/min,
-   crustdata 30/min, tikhub 30/s - before the first sweep). In-process on purpose: a second replica
+   crustdata 30/min, tikhub 30/s - before the first sweep). An endpoint whose upstream allowance
+   differs from its provider's is its own bucket (`policy._ENDPOINT_RATE_LIMITS`, read through
+   `view.rate_bucket`); it replaces the provider's limit for that route and does not draw from the
+   provider's bucket. In-process on purpose: a second replica
    doubles the effective rate, and the `rate_pressure` alert (step C) is the answer to that, not a
    shared counter on the request path.
 2. **One bounded `retry-after` re-send** - on a tier-4 **429** classified `burst` with

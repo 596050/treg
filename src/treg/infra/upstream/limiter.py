@@ -87,4 +87,4 @@ class Limiter:
 
 
 limiter = Limiter()
-"""The process-wide instance (one bucket per provider)."""
+"""The process-wide instance (one bucket per provider, or per endpoint with its own allowance)."""

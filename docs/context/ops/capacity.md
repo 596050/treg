@@ -663,6 +663,13 @@ not a provider-wide balance lock. See the ContactOut fragment for enabled covera
 catalog examples cannot renew successful contact checks. Hosted policy, mode and renewal scheduling
 remain private operational state.
 
+ContactOut documents per-minute ceilings for People Search, Contact Checker and its other APIs, but
+none for Email Verifier, whose 429s report `x-ratelimit-limit: 20`. Only that route is smoothed, as
+its own 20/minute bucket in `_ENDPOINT_RATE_LIMITS`; a provider-wide entry would hold every other
+ContactOut route to the verifier's ceiling. The bounded wait cannot add allowance: demand above it
+still reaches ContactOut and is answered 429, which a routed verify treats as an error and tries
+the next provider.
+
 ## AnyAPI
 
 A spent prepaid wallet or a key's own spend cap answers `402`. Observed 2026-09-19 by driving a

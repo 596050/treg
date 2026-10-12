@@ -215,3 +215,31 @@ async def test_a_smoothed_call_holds_no_db_connection_while_it_waits(clients: As
     elapsed_ms = int((time.monotonic() - t_drained) * 1000)
     assert int(r.headers["X-Treg-Smoothed"].split("=")[1]) >= 300, f"setup took {elapsed_ms} ms"
     assert seen == [0], "no pooled connection during the wait or the relay"
+
+
+async def test_an_endpoint_with_its_own_allowance_is_its_own_bucket(
+    clients: AsyncClient, platform_on, monkeypatch,
+):
+    """The ContactOut case: one route's allowance is far below its provider's. The endpoint's bucket
+    replaces the provider's for that route, so neither paces the other."""
+    from treg.domain.capacity import view as view_mod
+    await _publish_rate("tikhub", 1, 60.0)  # the provider's bucket would make the second call wait
+    monkeypatch.setitem(view_mod._ENDPOINT_RATE_LIMITS, EP, {"limit": 100, "window_s": 1, "source": "headers"})
+    await capacity_view.load()
+    assert capacity_view.rate_bucket("tikhub", EP) == (EP, 100, 1.0)
+    assert capacity_view.rate_bucket("tikhub", "tikhub.other") == ("tikhub", 1, 60.0)
+    seen = []
+    monkeypatch.setattr(call_service, "relay", _relay_script([(200, (), b'{"ok":true}')] * 2, seen))
+    rs = [await clients.get(f"/call/{EP}?aweme_id={i}") for i in range(2)]
+    assert [r.status_code for r in rs] == [200, 200]
+    assert all("X-Treg-Smoothed" not in r.headers for r in rs), "the provider's 1/min bucket was not used"
+    assert "tikhub" not in limiter._buckets and EP in limiter._buckets
+
+
+def test_every_endpoint_rate_limit_names_a_catalog_endpoint():
+    from treg.domain.capacity.policy import _ENDPOINT_RATE_LIMITS
+    from treg.domain.catalog import store as catalog_store
+    by_id = catalog_store.load().by_id
+    for endpoint_id, rl in _ENDPOINT_RATE_LIMITS.items():
+        assert endpoint_id in by_id, endpoint_id
+        assert int(rl["limit"]) > 0 and float(rl["window_s"]) > 0 and rl.get("source"), endpoint_id

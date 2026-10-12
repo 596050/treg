@@ -1234,9 +1234,9 @@ async def _execute_call(request: _ApplicationRequest, upstream_client: httpx.Asy
                 # would exceed the provider's published rate waits briefly (≤ 2 s, in-process, no DB —
                 # the DB phase ended above) instead of being relayed into a 429 nobody can fix. Beyond
                 # the cap it proceeds as before; nothing is ever refused here.
-                rl = capacity_view.rate_limit(mk.provider)
+                rl = capacity_view.rate_bucket(mk.provider, mk.endpoint_id)
                 if rl is not None:
-                    waited = await provider_limiter.acquire(mk.provider, *rl)
+                    waited = await provider_limiter.acquire(*rl)
                     if waited:
                         smoothed.append(f"wait={waited}")
             # The archive's serve path (docs/context/architecture/archive.md): a fresh stored
