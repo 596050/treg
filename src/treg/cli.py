@@ -2694,7 +2694,9 @@ def cmd_call(args, cfg) -> None:
             _print_raw_response(response)
         if outcome.get("result") not in (None, ""):
             value = outcome["result"]
-            rendered = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+            # A lone surrogate in the provider's text would otherwise raise on a UTF-8 stderr.
+            rendered = (jsontext.dumps(value) if isinstance(value, (dict, list))
+                        else str(value).encode("utf-8", "backslashreplace").decode("utf-8"))
             print(f"result: {rendered}", file=sys.stderr)
         if outcome.get("fetch_command"):
             # What comes back is the provider's own retrieval answer: the file bytes (OpenRouter) or

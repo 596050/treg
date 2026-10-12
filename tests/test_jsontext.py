@@ -4,6 +4,7 @@ relay stays faithful; the MCP path replaces it, because its serializer cannot wr
 import json
 
 import httpx
+import pytest
 
 from treg import cli, jsontext
 
@@ -61,3 +62,30 @@ def test_json_call_prints_a_lone_surrogate_as_valid_utf8(monkeypatch, capsys):
     out.encode("utf-8")
     assert json.loads(out) == {"result": PARSED, "_treg": {
         "http_status": 200, "call_id": "abc123", "charged_micro": 4000}}
+
+
+def test_an_awaited_result_with_a_lone_surrogate_still_prints(monkeypatch, capsys):
+    """`treg call --await` printed the terminal result to stderr with ensure_ascii=False (or str()
+    for a scalar); a lone surrogate there raised after the paid task had finished."""
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method, url, params=None, content=None, headers=None):
+            return httpx.Response(202, json={}, headers={"X-Treg-Async": "{}"})
+
+    monkeypatch.setattr(cli, "_client", lambda cfg, **k: FakeClient())
+    monkeypatch.setattr(cli, "_load_config", lambda: {"token": "t", "base_url": "http://x"})
+    for value, shown in ((PARSED, '{"text": "\\ud835\\udc01old \\ud835 cut"}'),
+                         (PARSED["text"], "\U0001d401old \\ud835 cut")):
+        monkeypatch.setattr(cli, "await_async_task",
+                            lambda *a, value=value, **k: {"result": value, "code": 0})
+        with pytest.raises(SystemExit) as done:
+            cli.main(["call", "x.video-gen.submit", "--await"])
+        assert done.value.code == 0
+        err = capsys.readouterr().err
+        err.encode("utf-8")
+        assert f"result: {shown}\n" in err
