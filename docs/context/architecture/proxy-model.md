@@ -3,6 +3,7 @@ title: The proxy — faithful credential-injecting relay + tool resolution
 status: shipped
 sources:
   - src/treg/infra/upstream/relay.py
+  - src/treg/jsontext.py
   - src/treg/infra/upstream/ssrf.py
   - src/treg/api.py
   - src/treg/application/call/authorize.py
@@ -94,6 +95,14 @@ incl. duplicates, headers, cookies, body bytes):
    This is semantic JSON relay, not byte-faithful relay: formatting changes, non-ASCII text is
    emitted as UTF-8, and duplicate keys fail closed. Never use a JSON binding where the upstream
    signs or hashes the caller's raw body bytes.
+
+   **Every JSON re-encode goes through `treg/jsontext.py`.** `json.loads` accepts an escaped lone
+   UTF-16 surrogate (`"\ud835"`, a JavaScript scraper cutting a LinkedIn post mid-pair) and a plain
+   `ensure_ascii=False` dump of it raises after the upstream answered. `dumps`/`dumps_bytes` keep
+   non-ASCII readable and fall back to ASCII escapes only for such a value, so the routed body, the
+   hub's child bodies and `treg --json call` relay the upstream's own escape. MCP is the one lossy
+   surface: the SDK's pydantic serializer cannot write the escape, so `mcp._body` replaces each
+   unpaired surrogate with U+FFFD (paired text is unchanged) rather than lose the paid answer.
 
 > **What treg keeps from a call.** Successes retain no content: the relay forwards bytes and the audit
 > row records status, size and timing. A **failed relayed call** - platform, own-key, or plain own-tool

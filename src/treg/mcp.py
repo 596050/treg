@@ -53,7 +53,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
 from mcp.types import AudioContent, CallToolResult, METHOD_NOT_FOUND, TextContent, ToolAnnotations
 
-from . import analytics, audit, hints, oauth_providers
+from . import analytics, audit, hints, jsontext, oauth_providers
 from .application import catalog_find as find_app
 from .application import catalog_search as search_app
 from .application import search_experiment
@@ -647,9 +647,13 @@ async def _api(token: str, *, client_name: str = "mcp"):
 
 def _body(r: httpx.Response) -> Any:
     try:
-        return r.json()
+        body = r.json()
     except ValueError:
         return r.text
+    # A lone surrogate parsed out of an upstream's JSON makes the SDK's pydantic dump raise, and the
+    # agent gets "Error serializing to JSON" with no body, call_id or cost for a call it paid for.
+    # pydantic cannot write the escape, so the surrogate becomes U+FFFD (treg/jsontext.py).
+    return jsontext.scrub_surrogates(body) if jsontext.may_hold_surrogates(r.content) else body
 
 
 async def _resolve_org(client: httpx.AsyncClient) -> tuple[int | None, str | None, dict | None]:

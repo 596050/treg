@@ -119,8 +119,8 @@ async def run_script(
     calls = 0
     try:
         proc.stdin.write((json.dumps({"op": "run", "script": script, "inputs": inputs, "data": data,
-                                      "memory_mb": MEMORY_MB, "wall_s": wall_s},
-                                     ensure_ascii=False) + "\n").encode())
+                                      "memory_mb": MEMORY_MB, "wall_s": wall_s})
+                          + "\n").encode())
         await proc.stdin.drain()
         deadline = asyncio.get_running_loop().time() + wall_s + 2
         # Calls run as tasks, MAX_PARALLEL at a time (the JSON road's width), and each reply goes
@@ -132,7 +132,7 @@ async def run_script(
         failure: SandboxError | None = None
 
         async def write(reply: dict) -> None:
-            proc.stdin.write((json.dumps(reply, ensure_ascii=False) + "\n").encode())
+            proc.stdin.write((json.dumps(reply) + "\n").encode())
             await proc.stdin.drain()
 
         async def one_call(msg: dict) -> None:
