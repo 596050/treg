@@ -688,7 +688,8 @@ adapters:
   dataforseo.x.serp-google-organic-live-advanced:
     accepts: [[q]]
     in:  {q: body.keyword}
-    in_expr: {body.location_code: "dfs_location(country)", body.language_code: language, body.depth: limit}
+    in_expr: {body.location_code: "dfs_location(country)", body.language_code: language, body.depth: limit,
+              body.load_async_ai_overview: "choose(ai_overview, true, null)"}
     body_array: true
     out: {results: "tasks[0].result[0].items", count: "tasks[0].result[0].items_count"}
     miss: "tasks[0].result[0].items == []"
@@ -2772,7 +2773,8 @@ adapters:
   crawl4ai.google.serp.organic:
     accepts: [[q]]
     in: {q: queryParams.q}
-    in_expr: {queryParams.country: "lower(country)", queryParams.language: "lower(language)", queryParams.num: "at_most(ceil_to(limit, 10), 100)"}
+    in_expr: {queryParams.country: "lower(country)", queryParams.language: "lower(language)", queryParams.num: "at_most(ceil_to(limit, 10), 100)",
+              queryParams.source: "choose(ai_overview, 'google', null)"}
     out: {results: results, count: "len(results)"}
     miss: "coalesce(results, []) == []"
   anyapi.google.serp.organic:
