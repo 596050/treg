@@ -63,7 +63,8 @@ The mechanics:
   (SKILL.md) + its secrets + its tool(s). The proxy *relays, never models* the upstream.
 
 New verified accounts receive $1.00 of signup credit once, when creating an eligible team.
-Additional teams start with no signup credit. Legacy `POST /users` registration does not verify
+Additional teams start with no signup credit, and aliases of one inbox (`+tag`, Gmail dots) share
+a single credit. Legacy `POST /users` registration does not verify
 an email or grant credit; use email OTP or Google/GitHub sign-in. Existing balances remain usable.
 
 ## First: install + sign in

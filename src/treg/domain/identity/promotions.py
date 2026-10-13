@@ -1,12 +1,34 @@
 """Identity eligibility for the one-time signup gift. Money is moved by the application."""
 from sqlalchemy import update
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import User
+from ...models import SignupPromoClaim, User
+from ...timeutil import utcnow_naive
+
+# Providers that deliver every dot variant of a local part to one mailbox.
+_DOTLESS_DOMAINS = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
+
+
+def promo_inbox(email: str) -> str:
+    """The mailbox an address delivers to, as far as the signup gift is concerned.
+
+    `+tag` subaddressing is dropped for every domain and Gmail's dots are ignored, so aliases
+    of one inbox share a single gift. Login identity keeps the address exactly as entered.
+    """
+    local, _, domain = email.strip().lower().rpartition("@")
+    local = local.split("+", 1)[0]
+    if domain in _DOTLESS_DOMAINS:
+        local, domain = local.replace(".", ""), _DOTLESS_DOMAINS[domain]
+    return f"{local}@{domain}"
 
 
 async def claim_signup_promo(db: AsyncSession, user_id: int) -> bool:
-    """Stage a single claim across all teams, processes and retries. Caller commits with the grant."""
+    """Stage a single claim per user and per inbox, across all teams, processes and retries.
+
+    The caller commits with the grant. A user whose inbox was already claimed through another
+    alias loses its own eligibility too, so it never gets a second try.
+    """
     result = await db.execute(
         update(User).where(
             User.id == user_id,
@@ -14,6 +36,15 @@ async def claim_signup_promo(db: AsyncSession, user_id: int) -> bool:
             User.signup_promo_available.is_(True),
             User.suspended.is_(False),
             User.demo.is_(False),
-        ).values(signup_promo_available=False)
+        ).values(signup_promo_available=False).returning(User.email)
     )
-    return result.rowcount == 1
+    email = result.scalar_one_or_none()
+    if email is None:
+        return False
+    insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
+    claimed = await db.execute(
+        insert(SignupPromoClaim)
+        .values(inbox=promo_inbox(email), user_id=user_id, created_at=utcnow_naive())
+        .on_conflict_do_nothing(index_elements=[SignupPromoClaim.inbox])
+    )
+    return claimed.rowcount == 1
