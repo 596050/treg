@@ -107,5 +107,10 @@ async def verify(token: str | None, *, action: str, remote_ip: str = "") -> str:
     codes = result.get("error-codes") or []
     if "internal-error" in codes:
         return UNAVAILABLE
+    if {"invalid-input-secret", "missing-input-secret"} & set(codes):
+        # Our secret is wrong (a rotation not yet deployed, a typo): that says nothing about the
+        # caller, and treating it as `invalid` would make enforce refuse everyone.
+        log.error("event=turnstile_secret_rejected codes=%s", ",".join(_short(c) for c in codes[:4]))
+        return UNAVAILABLE
     log.info("event=turnstile_rejected codes=%s", ",".join(_short(c) for c in codes[:4]) or "-")
     return INVALID

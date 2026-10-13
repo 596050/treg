@@ -240,7 +240,9 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   `infra/turnstile.py` only classifies: `pass` (siteverify success, action `email_start`, hostname
   in `TREG_TURNSTILE_HOSTNAMES`, else the public host and its known aliases), `missing`, `invalid`
   (failed, reused, expired, over 2048 characters, or solved for another action or host) and
-  `unavailable` (timeout, transport error or Cloudflare's `internal-error`). It never raises.
+  `unavailable` (timeout, transport error, Cloudflare's `internal-error`, or our own secret
+  rejected, which also logs `event=turnstile_secret_rejected`: a wrong secret must not read as
+  every caller being a bot). It never raises.
   The use case runs the per-email and per-IP rate window first and counts refused requests, so
   junk tokens cannot drive unbounded siteverify calls, and commits before the check so no
   connection waits on Cloudflare. Then `auth._check_browser` decides by `TREG_TURNSTILE_MODE`:

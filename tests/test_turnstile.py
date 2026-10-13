@@ -304,8 +304,18 @@ def test_misconfiguration_names_the_ways_enforce_would_refuse_everyone(monkeypat
 
 async def test_captcha_js_revalidates_with_an_etag(clients, widget):
     first = await clients.get("/captcha.js")
-    again = await clients.get("/captcha.js", headers={"If-None-Match": first.headers["etag"]})
-    assert again.status_code == 304 and again.content == b""
+    etag = first.headers["etag"].removeprefix("W/")
+    for sent in (etag, "W/" + etag, '"other", W/' + etag):
+        again = await clients.get("/captcha.js", headers={"If-None-Match": sent})
+        assert again.status_code == 304 and again.content == b"", sent
+    assert (await clients.get("/captcha.js", headers={"If-None-Match": '"other"'})).status_code == 200
+
+
+@pytest.mark.parametrize("code", ["invalid-input-secret", "missing-input-secret"])
+async def test_a_rejected_secret_is_our_problem_not_the_callers(widget, caplog, code):
+    widget["answer"] = {"success": False, "error-codes": [code]}
+    assert await turnstile.verify("tok", action="email_start") == turnstile.UNAVAILABLE
+    assert f"event=turnstile_secret_rejected codes={code}" in caplog.text
 
 
 async def test_a_code_requested_before_the_deploy_still_verifies_with_credit(clients):
