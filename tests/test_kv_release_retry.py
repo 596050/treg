@@ -50,6 +50,118 @@ async def _invoke_retry(store, phase, key="key", token="owner"):
     return await method(key, token, *((3000,) if phase == "renew" else ()))
 
 
+async def test_acquire_allows_a_slow_reply_but_stops_at_its_own_deadline():
+    calls = 0
+
+    async def command(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(0.250)  # Beyond the former 200 ms outer deadline.
+            return True
+        await asyncio.Event().wait()
+
+    store = _store_with(command)
+    assert await store.acquire_lease("key", "owner", 3000) == "acquired"
+    started = time.monotonic()
+    assert await store.acquire_lease("other", "owner", 3000) == "unavailable"
+    assert 1.4 <= time.monotonic() - started < 2.0
+    assert calls == 2  # An ambiguous SET is never retried by the store.
+
+
+@pytest.mark.parametrize("phase", ("renew", "release"))
+async def test_one_second_socket_failure_leaves_time_for_retry(phase):
+    calls = []
+
+    async def command(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            await asyncio.sleep(1.0)
+            raise redis_errors.TimeoutError("socket read timed out")
+        await asyncio.sleep(0.250)
+        return 1
+
+    assert await _invoke_retry(_store_with(command), phase) == {
+        "renew": "renewed", "release": "released",
+    }[phase]
+    assert len(calls) == 2 and calls[0] == calls[1]
+
+
+@pytest.mark.parametrize("phase", ("renew", "release"))
+async def test_default_retry_budget_is_two_and_a_half_seconds(phase):
+    calls = 0
+
+    async def command(*args):
+        nonlocal calls
+        calls += 1
+        await asyncio.Event().wait()
+
+    started = time.monotonic()
+    assert await _invoke_retry(_store_with(command), phase) == "unavailable"
+    assert 2.4 <= time.monotonic() - started < 3.0
+    assert calls == 2
+
+
+async def test_minimum_lease_validity_cuts_short_the_second_renewal_attempt():
+    calls = 0
+
+    async def command(*args):
+        nonlocal calls
+        calls += 1
+        await asyncio.Event().wait()
+
+    # A minimum three-second lease renewed at TTL/3 has at most two seconds left.
+    started = time.monotonic()
+    result = await _store_with(command).renew_lease(
+        "key", "owner", 3000, deadline=started + 2.0)
+    assert result == "deadline_expired"
+    assert 1.9 <= time.monotonic() - started < 2.5
+    assert calls == 2
+
+
+@pytest.mark.parametrize("cancel", (False, True))
+async def test_unobserved_real_acquire_is_cleaned_without_retry(local_redis, monkeypatch, cancel):
+    from treg.infra import money_admission as admission
+
+    real, _ = local_redis
+    acquired = asyncio.Event()
+    calls = 0
+
+    async def uncertain_reply(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert await real._client.set(*args, **kwargs)
+        acquired.set()
+        await asyncio.Event().wait()
+
+    store = _store_with(uncertain_reply)
+    store._client.eval = real._client.eval
+    monkeypatch.setattr(kv, "store", lambda: store)
+    monkeypatch.setattr(kv, "configured", lambda: True)
+    monkeypatch.setattr(kv, "_LEASE_ATTEMPT_TIMEOUT_S", 0.030)
+    gate = admission._Gate(admission._Observation("close"), 3)
+    task = asyncio.create_task(gate.acquire([int(uuid4().hex[:12], 16)], 1))
+    try:
+        await asyncio.wait_for(acquired.wait(), 1)
+        key, token = gate.attempted[0]
+        assert await real._client.get(key) == token
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            assert await task == "kv_unavailable"
+        assert calls == 1 and not gate.leases
+        locks = list(gate.local)
+        await admission._release_safely(gate)
+        assert not await real._client.exists(key)
+        assert all(not lock.locked() for lock in locks)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await admission._release_safely(gate)
+
+
 async def test_lost_reply_after_real_delete_is_safe_to_retry(local_redis):
     real, key = local_redis
     assert await real.acquire_lease(key, "old-owner", 3000) == "acquired"
@@ -325,8 +437,9 @@ async def test_cancellation_propagates_and_never_starts_another_attempt(cancel_a
 
 
 @pytest.mark.parametrize("phase", ("renew", "release"))
-async def test_retry_is_bounded_by_two_short_attempts(monkeypatch, phase):
-    monkeypatch.setattr(kv, "_TIMEOUT_S", 0.025)
+async def test_retry_shares_total_budget_with_first_attempt(monkeypatch, phase):
+    monkeypatch.setattr(kv, "_LEASE_ATTEMPT_TIMEOUT_S", 0.060)
+    monkeypatch.setattr(kv, "_LEASE_RETRY_BUDGET_S", 0.100)
     calls = 0
 
     async def command(*args):
@@ -345,7 +458,8 @@ async def test_retry_is_bounded_by_two_short_attempts(monkeypatch, phase):
 
 @pytest.mark.parametrize("phase", ("renew", "release"))
 async def test_first_attempt_cleanup_cannot_grant_second_attempt_a_fresh_budget(monkeypatch, phase):
-    monkeypatch.setattr(kv, "_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(kv, "_LEASE_ATTEMPT_TIMEOUT_S", 0.100)
+    monkeypatch.setattr(kv, "_LEASE_RETRY_BUDGET_S", 0.200)
     loop = asyncio.get_running_loop()
     attempts = []
 
@@ -372,7 +486,8 @@ async def test_first_attempt_cleanup_cannot_grant_second_attempt_a_fresh_budget(
 
 @pytest.mark.parametrize("phase", ("renew", "release"))
 async def test_exhausted_total_budget_does_not_start_a_second_command(monkeypatch, phase):
-    monkeypatch.setattr(kv, "_TIMEOUT_S", 0.010)
+    monkeypatch.setattr(kv, "_LEASE_ATTEMPT_TIMEOUT_S", 0.020)
+    monkeypatch.setattr(kv, "_LEASE_RETRY_BUDGET_S", 0.040)
     calls = 0
 
     async def command(*args):

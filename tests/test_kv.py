@@ -2,11 +2,64 @@
 import os
 import asyncio
 import time
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from treg.config import get_settings
 from treg.infra import kv
+
+
+async def test_redis_socket_budgets_allow_one_second():
+    store = kv.RedisStore('redis://127.0.0.1:1')
+    try:
+        connection = store._client.connection_pool.make_connection()
+        assert connection.socket_timeout == connection.socket_connect_timeout == 1.0
+    finally:
+        await store.aclose()
+
+
+@pytest.mark.parametrize('operation', ('take', 'ping'))
+@pytest.mark.parametrize('cancel', (False, True))
+async def test_optional_operations_keep_short_deadlines_and_propagate_cancellation(
+    monkeypatch, operation, cancel,
+):
+    entered, stopped = asyncio.Event(), asyncio.Event()
+    faults = []
+    monkeypatch.setattr(kv, '_note_fault', faults.append)
+
+    async def blocked():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    pipe = MagicMock()
+    pipe.__aenter__.return_value = pipe
+    pipe.execute = AsyncMock(side_effect=blocked)
+    store = kv.RedisStore.__new__(kv.RedisStore)
+    store._client = SimpleNamespace(pipeline=lambda **kwargs: pipe, ping=blocked)
+    started = time.monotonic()
+    task = asyncio.create_task(store.take('key', 5, 60) if operation == 'take' else store.ping())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert not faults
+        else:
+            assert await task is False
+            assert 0.15 <= time.monotonic() - started < 0.6
+            assert len(faults) == 1 and isinstance(faults[0], TimeoutError)
+        assert stopped.is_set()
+        if operation == 'take':
+            pipe.__aexit__.assert_awaited_once()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_local_window_counts_then_expires(monkeypatch):

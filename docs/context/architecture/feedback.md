@@ -180,15 +180,21 @@ The whole hook is best-effort: no database or body access, no change to the call
 or writes, and a fault anywhere (the store included) can only lose the header, never the answer.
 The store is `infra/kv.py`: Render Key Value (Redis protocol) at `TREG_KV_URL`, or a bounded
 in-process dictionary when unset; both answer through one `take(key, limit, ttl_s)` that is one
-atomic `INCR` + `EXPIRE NX`. Reads and writes are capped at 100 ms and **fail closed**: a store
+atomic `INCR` + `EXPIRE NX`. The shared Redis client's socket and connection timeouts default to
+one second (`_TIMEOUT_S`); URL query options retain the driver's override behavior. Counter
+operations and health pings keep an independent 200 ms outer deadline (`_OPTIONAL_TIMEOUT_S`).
+The router awaits sampled review-budget checks before returning the response, so these optional
+checks must not inherit the longer money lease budget. Counters **fail closed**: a store
 that cannot answer is a spent budget, so an outage silently withholds review invitations rather
 than flooding a team, and `hint_attached` events dropping to zero is the signal. `/admin/kv`
 (superadmin) reports `configured` and `reachable`; startup logs a warning when the configured
 store does not answer. Optional [money admission](money.md#optional-admission-before-the-settlement-session)
 is a separate tenant using `acquire_lease`, `renew_lease` and `release_lease`, with explicit
 contention, lost-ownership and unavailable results. Its owner-checked Redis lease operations are
-bounded per attempt at twice `_TIMEOUT_S`; renewal and release retry a transient failure once
-within a shared four-times-`_TIMEOUT_S` budget. Renewal checks the earliest confirmed expiry of
+bounded per attempt at 1.5 seconds (`_LEASE_ATTEMPT_TIMEOUT_S`); renewal and release retry a
+transient failure once within a shared 2.5-second per-key budget (`_LEASE_RETRY_BUDGET_S`).
+Acquisition does not retry an unavailable result: cleanup uses the original token even when
+the SET reply was not observed. Renewal checks the earliest confirmed expiry of
 all held admission leases before each attempt. Timeouts remain cooperative. The local counter
 store reports leases unavailable rather than
 claiming cross-process exclusion. Money admission falls back to database protection on store
