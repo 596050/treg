@@ -64,14 +64,15 @@ def blocked_email(email: str, door: str) -> bool:
 
 async def find_or_create_user(
     db: AsyncSession, email: str, *, door: str = "login",
-    created: set[int] | None = None, verified: bool = False,
+    created: set[int] | None = None, verified: bool = False, promo_eligible: bool = True,
 ) -> User:
     """Find a user by email, else register them — the user ONLY, **no auto personal org**. The shared
     core of every identity door (GitHub / Google / email OTP). A brand-new user therefore lands with
     zero teams and is asked to NAME + CREATE their first team (the dashboard's mandatory welcome, or
     `treg org create`) — we never spawn a throwaway personal org they didn't ask for. Their identity
     token is user-scoped, so it works before they have any org (org chosen per-request via X-Treg-Org).
-    Only trusted email-proof callers pass verified=True. Caller commits."""
+    Only trusted email-proof callers pass verified=True. promo_eligible=False creates the user
+    without a signup-credit claim; it never touches an existing user. Caller commits."""
     email = _norm_email(email)
     # Machine identities (agents, the published demo token) are minted by an admin and act ONLY by
     # their token. This is the single choke point every identity door shares, so blocking here means
@@ -85,7 +86,7 @@ async def find_or_create_user(
         raise BlockedEmailError
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is None:
-        user = User(email=email)
+        user = User(email=email, signup_promo_available=promo_eligible)
         db.add(user)
         try:
             await db.flush()  # surfaces the unique-email violation on a concurrent first-login race
@@ -101,12 +102,16 @@ async def find_or_create_user(
     return user
 
 
-def track_signup(user: User, created: set[int], method: str, entry_surface: str) -> None:
-    """Call only after commit. Existing users (including a concurrent signup's loser) emit nothing."""
+def track_signup(
+    user: User, created: set[int], method: str, entry_surface: str, *, captcha: str = "",
+) -> None:
+    """Call only after commit. Existing users (including a concurrent signup's loser) emit nothing.
+    `captcha` is the Turnstile outcome of the code request, when the deployment checks one."""
     if user.id in created:
-        analytics.capture(user.email, "signup_completed", {
-            "signup_method": method, "entry_surface": analytics.funnel_surface(entry_surface),
-        })
+        properties = {"signup_method": method, "entry_surface": analytics.funnel_surface(entry_surface)}
+        if captcha:
+            properties["captcha"] = captcha
+        analytics.capture(user.email, "signup_completed", properties)
 
 
 async def _grant_signup_promo(db: AsyncSession, org: Org, *, user_id: int) -> None:

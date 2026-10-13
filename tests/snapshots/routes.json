@@ -933,6 +933,15 @@
       "GET",
       "HEAD"
     ],
+    "name": "captcha_js",
+    "path": "/captcha.js"
+  },
+  {
+    "kind": "APIRoute",
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
     "name": "gtag_js",
     "path": "/gtag.js"
   },

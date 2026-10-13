@@ -584,7 +584,7 @@
         if(!this.user)return false;
         await this.finishSignup();return true;
       },
-      async sendCode(){this.authBusy=true;this.authError='';try{const r=await this.api('/auth/email/start',{method:'POST',body:JSON.stringify({email:this.email})},'');this.emailStep='code';this.devCode=r.dev_code||'';}catch(e){this.authError=e.message;}finally{this.authBusy=false;}},
+      async sendCode(){this.authBusy=true;this.authError='';try{const captcha_token=window.tregCaptcha?await window.tregCaptcha.token('email_start'):'';const r=await this.api('/auth/email/start',{method:'POST',body:JSON.stringify({email:this.email,captcha_token})},'');this.emailStep='code';this.devCode=r.dev_code||'';}catch(e){this.authError=e.message;}finally{this.authBusy=false;}},
       async verifyEmail(){this.authBusy=true;this.authError='';try{await this.api('/auth/email/verify',{method:'POST',body:JSON.stringify({email:this.email,code:this.code})},'');this.$refs.loginDialog.close();await this.loadIdentity();await this.restoreLinkedRun();await this.finishSignup();}catch(e){this.authError=e.message;this.error=e.message;}finally{this.authBusy=false;}},
       async createTeam(){this.authBusy=true;this.authError='';try{await this.api('/orgs',{method:'POST',body:JSON.stringify({name:this.newTeamName})},'');this.$refs.teamDialog.close();await this.loadIdentity();await this.prepare();}catch(e){this.authError=e.message;}finally{this.authBusy=false;}},
       inputError(){

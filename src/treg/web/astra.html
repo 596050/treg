@@ -18,6 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="media/astra/page.css">
   <script src="media/astra/page.js" defer></script>
+<script src="/captcha.js" defer></script>
 </head>
 <body data-page="gpt6">
 <a class="skip" href="#main">Skip to content</a>
@@ -269,7 +270,7 @@
   <div class="signin-divider">or email a code</div>
   <form id="email-start-form">
     <label class="sr-only" for="signin-email">Email address</label>
-    <input id="signin-email" name="email" type="email" placeholder="you@work.com" autocomplete="email" required>
+    <input id="signin-email" name="email" type="email" data-captcha="email_start" placeholder="you@work.com" autocomplete="email" required>
     <button class="button" type="submit" id="email-start-button">Email me a sign-in code</button>
   </form>
   <form id="email-verify-form" hidden>

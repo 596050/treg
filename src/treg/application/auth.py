@@ -20,6 +20,7 @@ from .. import audit, crypto, email as email_sender, ratestore
 from ..application.onboard import demo as demo_seed
 from ..application.onboard import first_run
 from ..infra import db as database
+from ..infra import turnstile
 from ..config import get_settings
 from ..domain.identity import session as sess
 from ..domain.identity import mcp_oauth
@@ -52,6 +53,7 @@ OTP_START_NS = "otp_start"
 OTP_START_WINDOW_S = 900      # 15 minutes
 OTP_START_MAX_PER_EMAIL = 5   # code requests for one inbox per window (caps bombing a single victim)
 OTP_START_MAX_PER_IP = 30     # code requests from one IP per window (looser — offices/NAT share an IP)
+TURNSTILE_ACTION = "email_start"  # must match the action the sign-in forms pass to captcha.js
 AUTH_CODE_TTL_S = 300   # a code is redeemed within seconds; five minutes is generous, not a window
 
 
@@ -204,7 +206,34 @@ class OAuthAuthorizationView:
     teams: list[dict]
 
 
-async def start_email_login(email: str, client_ip: str) -> dict:
+async def _check_browser(captcha_token: str, client_ip: str, client: str = "browser") -> tuple[str, bool]:
+    """Classify the Turnstile token and decide (outcome, promo_eligible) for this code request.
+
+    Off: no outcome, nothing changes. `observe` only records. `enforce` refuses a missing or
+    invalid token, and lets an unanswered check through without signup credit, so a Cloudflare
+    outage costs a new account its credit rather than costing everyone their sign-in. A browser
+    that could not get a token says why (`turnstile.client_reason`), which only picks the message.
+    """
+    if not turnstile.enabled():
+        return "", True
+    outcome = await turnstile.verify(captcha_token, action=TURNSTILE_ACTION, remote_ip=client_ip)
+    reason = turnstile.client_reason(captcha_token)
+    mode = get_settings().turnstile_mode
+    logging.getLogger("treg").info(
+        "event=turnstile_email_start outcome=%s reason=%s client=%s mode=%s",
+        outcome, reason or "-", client, mode)
+    if mode != "enforce":
+        return outcome, True
+    if outcome == turnstile.MISSING and reason in ("blocked", "pending"):
+        raise EmailAuthError(f"captcha_{reason}")
+    if outcome in (turnstile.MISSING, turnstile.INVALID):
+        raise EmailAuthError("captcha_failed")
+    return outcome, outcome == turnstile.PASS
+
+
+async def start_email_login(
+    email: str, client_ip: str, *, captcha_token: str = "", client: str = "browser",
+) -> dict:
     """Issue and deliver an email OTP, committing its rate and one-time state atomically."""
     email = _norm_email(email)
     if email.endswith("@" + demo_seed.DEMO_DOMAIN):
@@ -214,22 +243,30 @@ async def start_email_login(email: str, client_ip: str) -> dict:
     if signup.blocked_email(email, "otp_start"):  # refuse early: no code, no mail, no rate window
         raise EmailAuthError("blocked_domain")
 
+    # The rate window comes first and counts refused requests too, so junk tokens cannot drive
+    # unbounded siteverify calls; it commits before the check so no connection waits on Cloudflare.
     async with database.session_maker() as db:
         await ratestore.sweep(db, OTP_START_NS)
-        if not await ratestore.rate_check(
+        allowed = await ratestore.rate_check(
             db, OTP_START_NS,
             [(f"e:{email}", OTP_START_MAX_PER_EMAIL), (f"i:{client_ip}", OTP_START_MAX_PER_IP)],
             OTP_START_WINDOW_S,
-        ):
-            await db.commit()
-            raise EmailAuthError("rate_limited")
-        # A designated account has no inbox: its configured code hash is issued instead, so the
-        # verify path, attempt count and TTL are exactly those of an emailed code.
-        fixed_hash = get_settings().fixed_login_code_hashes.get(email)
+        )
+        await db.commit()
+    if not allowed:
+        raise EmailAuthError("rate_limited")
+    # A designated account has no inbox: its configured code hash is issued instead, so the
+    # verify path, attempt count and TTL are exactly those of an emailed code. Nothing is mailed
+    # and its credit was settled long ago, so it skips the browser check (reviewers may script it).
+    fixed_hash = get_settings().fixed_login_code_hashes.get(email)
+    captcha, promo_eligible = ("", True) if fixed_hash else await _check_browser(captcha_token, client_ip, client)
+
+    async with database.session_maker() as db:
         code = f"{_secrets.randbelow(1_000_000):06d}"
         await ratestore.kv_put(
             db, OTP_NS, email,
-            {"hash": fixed_hash or crypto.hash_token(code), "attempts": MAX_OTP_ATTEMPTS},
+            {"hash": fixed_hash or crypto.hash_token(code), "attempts": MAX_OTP_ATTEMPTS,
+             "captcha": captcha, "promo": promo_eligible},
             EMAIL_CODE_TTL,
         )
         await db.commit()
@@ -245,7 +282,9 @@ async def start_email_login(email: str, client_ip: str) -> dict:
     return result
 
 
-async def verify_email_login(email: str, code: str, *, entry_surface: str = "") -> VerifiedEmail:
+async def verify_email_login(
+    email: str, code: str, *, entry_surface: str = "", client: str = "browser",
+) -> VerifiedEmail:
     """Consume an email OTP and return both CLI and browser credentials for the proven identity."""
     email = _norm_email(email)
     async with database.session_maker() as db:
@@ -264,7 +303,9 @@ async def verify_email_login(email: str, code: str, *, entry_surface: str = "") 
         await ratestore.kv_pop(db, OTP_NS, email)
         created: set[int] = set()
         try:
-            user = await signup.find_or_create_user(db, email, door="otp_verify", created=created, verified=True)
+            user = await signup.find_or_create_user(
+                db, email, door="otp_verify", created=created, verified=True,
+                promo_eligible=entry.get("promo", True))
         except signup.MachineIdentityError as exc:
             raise EmailAuthError("machine_identity") from exc
         except signup.BlockedEmailError as exc:  # a code minted before the domain was listed
@@ -272,7 +313,13 @@ async def verify_email_login(email: str, code: str, *, entry_surface: str = "") 
         if user.suspended:
             raise EmailAuthError("suspended")
         await db.commit()
-        signup.track_signup(user, created, "email", entry_surface)
+        if entry.get("captcha"):
+            # Paired with event=turnstile_email_start: per outcome, how many code requests were
+            # redeemed, i.e. how many people enforce would have refused. Existing users included.
+            logging.getLogger("treg").info(
+                "event=turnstile_email_verify outcome=%s new_user=%s client=%s",
+                entry["captcha"], user.id in created, client)
+        signup.track_signup(user, created, "email", entry_surface, captcha=entry.get("captcha", ""))
         token = sess.make_identity(
             user.id, user.token_version, ttl=sess.BOOTSTRAP_TTL_SECONDS,
             scope=sess.BOOTSTRAP_SCOPE,

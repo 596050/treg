@@ -423,6 +423,11 @@
       },
       "EmailStartIn": {
         "properties": {
+          "captcha_token": {
+            "default": "",
+            "title": "Captcha Token",
+            "type": "string"
+          },
           "email": {
             "title": "Email",
             "type": "string"
