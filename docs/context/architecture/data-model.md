@@ -645,7 +645,10 @@ events or org/call IDs in these aggregates.
 `infra.kv` by `phase` (`acquire`, `renew`, `release`) and one of seven `error_type` values:
 `deadline_exceeded` (Python timeout), `redis_timeout`, `authentication`, `permission`, `connection`,
 `response`, or `other`. At most 21 buckets retain counts, UTC first/last failure timestamps and
-`elapsed_max_ms`, plus the configured socket timeout and outer operation deadline in milliseconds.
+`elapsed_max_ms`, plus the socket timeout default (1,000 ms) and outer command-attempt deadline
+(1,500 ms). Renewal/release attempts also share a 2,500 ms per-key budget; remaining confirmed
+lease validity can further shorten renewal. URL query overrides can change the effective driver
+socket timeout without changing these reported defaults.
 Elapsed time is client-observed, including connection setup and event-loop scheduling, not Redis
 server execution time. A type narrows the failing boundary; it does not establish a network or
 server root cause by itself. Normal contention and task cancellation are not lease errors.

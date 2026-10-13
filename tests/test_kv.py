@@ -9,6 +9,15 @@ from treg.config import get_settings
 from treg.infra import kv
 
 
+async def test_redis_socket_budgets_allow_one_second():
+    store = kv.RedisStore('redis://127.0.0.1:1')
+    try:
+        connection = store._client.connection_pool.make_connection()
+        assert connection.socket_timeout == connection.socket_connect_timeout == 1.0
+    finally:
+        await store.aclose()
+
+
 async def test_local_window_counts_then_expires(monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(time, 'monotonic', lambda: clock[0])

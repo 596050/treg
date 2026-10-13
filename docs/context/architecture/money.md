@@ -327,13 +327,20 @@ counted separately and are not a successful rollout. Owner-checked renewal and d
 or deleting a newer owner's lease. TTL and renewal cannot prove that an old database transaction
 has stopped, which is why database locks remain necessary.
 
+The shared Redis client's socket and connection timeout defaults are one second. Acquisition
+has a 1.5-second outer deadline; an unavailable result is not retried because SET may already
+have succeeded. The gate records its token before SET and cleans up unobserved acquisitions.
+The admission queue wait and lease TTL settings are independent of these command budgets.
+
 Renewal retries a transient timeout/connection failure once with the same owner-checked
 `PEXPIRE`: it cannot recreate an expired key or extend a successor's token. Each attempt has
-a 200 ms cooperative deadline within a shared 400 ms budget. The gate passes the earliest
+a 1.5-second cooperative deadline within a shared 2.5-second budget. The gate passes the earliest
 confirmed expiry of all held leases into `renew_lease`, which checks this absolute deadline
 before each EVAL and caps each attempt's timeout by the remaining budget. A late transient
 error or a timeout translated by driver cleanup cannot start another attempt after that deadline;
-these checks cannot preempt an already-running command or a scheduling pause.
+these checks cannot preempt an already-running command or a scheduling pause. A minimum
+three-second lease renewed at TTL/3 has at most two seconds of confirmed validity remaining,
+so that validity bound can shorten the retry rather than allowing the full command budget.
 Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
 counts validity from each acquire/renew request's start, not its reply; after a scheduling pause
 it checks this deadline before renewing or entering the session. A renewal reply observed after
@@ -346,7 +353,7 @@ per scope alongside `lease_lost`, without increasing `kv_errors`. Actual command
 retain their diagnostic rows if the validity deadline also expires during failure cleanup.
 
 Lease cleanup retries a transient timeout/connection failure at most once, always with the same
-token-checked Lua delete. Each attempt keeps its 200 ms deadline within a shared 400 ms per-key
+token-checked Lua delete. Each attempt keeps its 1.5-second deadline within a shared 2.5-second per-key
 budget; authentication/permission errors and cancellation do not retry. These are asyncio time
 budgets, not hard wall-clock guarantees under scheduler stalls or cancellation cleanup. Multiple
 Org leases are cleaned up in reverse order, so a batch's cleanup budget scales with its keys.
