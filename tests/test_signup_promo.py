@@ -13,6 +13,7 @@ from conftest import verified_identity
 from treg.config import get_settings
 from treg.domain import money
 from treg.infra.db import session_maker
+from treg.domain.identity.access import _norm_email
 from treg.domain.identity.promotions import promo_inbox
 from treg.models import CreditBlock, Hold, LedgerEntry, Org, SignupPromoClaim, User
 
@@ -139,9 +140,20 @@ async def test_disabled_promo_does_not_consume_new_user_claim(clients, monkeypat
     (' ops@example.org ', 'ops@example.org'),
     ('farmer@GMail.com.', 'farmer@gmail.com'),
     ('ops@example.org..', 'ops@example.org'),
+    ('Far.Mer+x@GMail.com.', 'farmer@gmail.com'),
 ])
 def test_promo_inbox_folds_aliases_of_one_mailbox(address, inbox):
     assert promo_inbox(address) == inbox
+
+
+@pytest.mark.parametrize(('address', 'identity'), [
+    (' Bob@X.com. ', 'bob@x.com'),
+    ('bob+tag@x.com..', 'bob+tag@x.com'),   # login identity keeps the alias; only the gift folds it
+    ('a@.', 'a@.'),                          # a domain of dots alone is not emptied into `a@`
+    ('no-at-sign.', 'no-at-sign.'),
+])
+def test_login_identity_drops_only_a_trailing_domain_dot(address, identity):
+    assert _norm_email(address) == identity
 
 
 @pytest.mark.parametrize('concurrent', [False, True])
@@ -226,3 +238,4 @@ def test_migration_disables_old_users_and_preserves_old_writer_default(tmp_path)
         assert db.execute(text('SELECT signup_promo_available, email_verified_at FROM "user"')).all() == [(0, None), (0, None)]
     assert User(email='new-code@example.org').signup_promo_available is True
     engine.dispose()
+

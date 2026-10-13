@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models import SignupPromoClaim, User
 from ...timeutil import utcnow_naive
+from .access import _norm_email
 
 # Providers that deliver every dot variant of a local part to one mailbox.
 _DOTLESS_DOMAINS = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
@@ -13,11 +14,12 @@ _DOTLESS_DOMAINS = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
 def promo_inbox(email: str) -> str:
     """The mailbox an address delivers to, as far as the signup gift is concerned.
 
-    `+tag` subaddressing is dropped for every domain and Gmail's dots are ignored, so aliases
-    of one inbox share a single gift. Login identity keeps the address exactly as entered.
+    Starts from the login identity (`_norm_email`: lowercased, trailing domain dots dropped), then
+    drops `+tag` subaddressing for every domain and ignores Gmail's dots, so aliases of one inbox
+    share a single gift. Each alias remains its own login; only the gift is shared.
     """
-    local, _, domain = email.strip().lower().rpartition("@")
-    local, domain = local.split("+", 1)[0], domain.rstrip(".")
+    local, _, domain = _norm_email(email).rpartition("@")
+    local = local.split("+", 1)[0]
     if domain in _DOTLESS_DOMAINS:
         local, domain = local.replace(".", ""), _DOTLESS_DOMAINS[domain]
     return f"{local}@{domain}"

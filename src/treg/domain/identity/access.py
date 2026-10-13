@@ -378,8 +378,9 @@ def _norm_email(email: str) -> str:
     `bob@x.com` never fork into two users / two orgs and an invite is always redeemable. A domain's
     trailing dots are the fully-qualified spelling of the same domain, so `bob@x.com.` is `bob@x.com`
     too; left in, they slip a listed domain past the blocklist's label walk."""
-    local, at, domain = email.strip().lower().rpartition("@")
-    return f"{local}{at}{domain.rstrip('.')}" if at else domain
+    email = email.strip().lower()
+    local, at, domain = email.rpartition("@")
+    return f"{local}@{domain.rstrip('.')}" if at and domain.rstrip(".") else email
 
 
 # ---- machine identities: the publishable demo token, and agents ----------------------------
