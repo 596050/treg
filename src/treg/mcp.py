@@ -62,6 +62,7 @@ from .domain.catalog import store as catalog_store
 from .config import PUBLIC_HOST_ALIASES, get_settings
 from .feedback_contract import FeedbackCategory, FEEDBACK_DESCRIPTION, ReviewUsefulness, REVIEW_DESCRIPTION
 from .domain.catalog.stats import EndpointObservationReader
+from .infra import org_traffic
 
 # Every tool must declare what it can DO, and the review process checks these against real behaviour.
 # Read-only means it changes nothing anywhere; open-world means what it sends leaves the caller's own
@@ -1263,6 +1264,7 @@ async def call(endpoint_id: str, params: dict | list | None = None,
     )
 
 
+@org_traffic.mcp_adapter("call")
 async def _call_impl(endpoint_id: str, params: dict | list | None = None,
                      method: str | None = None, idempotency_key: str | None = None,
                      query: dict | None = None, body: dict | list | str | None = None,
@@ -1521,6 +1523,7 @@ async def _call_impl(endpoint_id: str, params: dict | list | None = None,
     return out
 
 
+@org_traffic.mcp_adapter("call_media")
 async def _call_media_impl(
     endpoint_id: str, *, body: dict | list | str, headers: dict | None,
     idempotency_key: str | None, ctx: Context, catalog_only: bool,

@@ -112,8 +112,8 @@ idempotency-label release. After caller identity exists, the pool adapter report
 population. Both also send the infrastructure exception to `analytics.capture_fault` before returning
 the typed 503; normal HTTP refusals remain responses, not server faults.
 
-`bootstrap_http.py` owns the app-wide middleware implementations. The middleware stack is
-`_BodyDecodeMiddleware` -> `_SecurityHeadersMiddleware` ->
+`bootstrap_http.py` owns the app-wide HTTP middleware implementations. The middleware stack is
+`org_traffic.RequestLogMiddleware` -> `_BodyDecodeMiddleware` -> `_SecurityHeadersMiddleware` ->
 `_LegacyHostRedirectMiddleware` -> routes/mounts. All three are pure ASGI. The security wrapper adds
 headers at `http.response.start` with case-insensitive setdefault semantics, and the redirect wrapper
 either sends the same 301/302 response as before or calls its child directly. On a local dev server
@@ -123,6 +123,9 @@ rests on) `_DevTitleMiddleware` wraps the stack and prefixes every HTML page's `
 `BaseHTTPMiddleware.call_next()` out of this stack matters for streaming and disconnects: an MCP
 client may close while its stateless transport terminates without sending a response, which is a
 normal end to an already-dead connection rather than a server 500.
+The outer traffic observer emits sanitized [Org request/traffic logs](org-traffic.md). The
+all/dataplane lifespans share one process-local 60-second reporting timer, cancelled when the last
+owner exits; this is not an additional asyncio worker task and does not use analytics or a database.
 
 Pure ASGI does not make a genuine missing-response defect silent. Uvicorn's
 `RequestResponseCycle.run_asgi` checks an app that returns while the connection is still live, logs

@@ -227,7 +227,7 @@ Regenerate via `scripts/build-map.py`.
 | `src/treg/archive.py` | architecture/archive.md |
 | `src/treg/archive_bodies.py` | architecture/archive.md |
 | `src/treg/audit.py` | architecture/data-model.md, ops/deploy.md |
-| `src/treg/bootstrap.py` | architecture/archive.md, architecture/composition.md, architecture/find.md, architecture/policy-extensions.md, interface/enrich-arena.md, interface/web-arena.md |
+| `src/treg/bootstrap.py` | architecture/archive.md, architecture/composition.md, architecture/find.md, architecture/org-traffic.md, architecture/policy-extensions.md, interface/enrich-arena.md, interface/web-arena.md |
 | `src/treg/bootstrap_handlers.py` | architecture/composition.md, architecture/data-model.md, interface/api.md |
 | `src/treg/bootstrap_http.py` | architecture/composition.md, interface/api.md |
 | `src/treg/call_surface.py` | architecture/composition.md, architecture/proxy-model.md, architecture/table.md, interface/api.md |
@@ -457,6 +457,7 @@ Regenerate via `scripts/build-map.py`.
 | `src/treg/infra/oauth_refresh.py` | architecture/auth-secrets.md |
 | `src/treg/infra/object_store.py` | architecture/archive.md |
 | `src/treg/infra/org_concurrency.py` | architecture/org-concurrency.md |
+| `src/treg/infra/org_traffic.py` | architecture/org-traffic.md |
 | `src/treg/infra/stripe.py` | architecture/money.md |
 | `src/treg/infra/turnstile.py` | architecture/multi-tenancy.md |
 | `src/treg/infra/upstream/__init__.py` | architecture/import-boundaries.md |
@@ -472,7 +473,7 @@ Regenerate via `scripts/build-map.py`.
 | `src/treg/localproxy.py` | architecture/local-proxy.md |
 | `src/treg/localrun.py` | architecture/local-run.md |
 | `src/treg/maintenance.py` | architecture/data-model.md, ops/deploy.md |
-| `src/treg/mcp.py` | architecture/catalog.md, architecture/hub.md, architecture/instagram-oauth.md, architecture/mcp-oauth.md, architecture/org-concurrency.md |
+| `src/treg/mcp.py` | architecture/catalog.md, architecture/hub.md, architecture/instagram-oauth.md, architecture/mcp-oauth.md, architecture/org-concurrency.md, architecture/org-traffic.md |
 | `src/treg/mcp_install.py` | interface/skill.md |
 | `src/treg/models.py` | architecture/data-model.md, architecture/hub.md, architecture/media.md, architecture/money.md, architecture/multi-tenancy.md, interface/enrich-arena.md, interface/web-arena.md |
 | `src/treg/oauth.py` | architecture/auth-secrets.md |
@@ -489,7 +490,7 @@ Regenerate via `scripts/build-map.py`.
 | `src/treg/routers/auth.py` | architecture/composition.md, architecture/mcp-oauth.md, architecture/multi-tenancy.md, architecture/table.md, interface/api.md, interface/enrich-arena.md, interface/onboarding.md |
 | `src/treg/routers/auth_helpers.py` | interface/api.md, interface/cli.md |
 | `src/treg/routers/billing.py` | architecture/composition.md, architecture/money.md, interface/api.md |
-| `src/treg/routers/call.py` | architecture/composition.md, architecture/feedback.md, architecture/instagram-oauth.md, architecture/money.md, architecture/org-concurrency.md, architecture/proxy-model.md, architecture/table.md, interface/api.md |
+| `src/treg/routers/call.py` | architecture/composition.md, architecture/feedback.md, architecture/instagram-oauth.md, architecture/money.md, architecture/org-concurrency.md, architecture/org-traffic.md, architecture/proxy-model.md, architecture/table.md, interface/api.md |
 | `src/treg/routers/catalog.py` | architecture/catalog.md, architecture/hub.md, interface/api.md |
 | `src/treg/routers/connections.py` | architecture/auth-secrets.md, architecture/composition.md, guides/expanding-a-category.md, interface/api.md |
 | `src/treg/routers/feedback.py` | architecture/feedback.md |
@@ -502,7 +503,7 @@ Regenerate via `scripts/build-map.py`.
 | `src/treg/routers/referrals.py` | architecture/composition.md, architecture/money.md, interface/api.md |
 | `src/treg/routers/resources.py` | architecture/auth-secrets.md, architecture/composition.md, architecture/multi-tenancy.md, interface/api.md |
 | `src/treg/routers/signup_cookies.py` | interface/api.md |
-| `src/treg/routers/table.py` | architecture/table.md |
+| `src/treg/routers/table.py` | architecture/org-traffic.md, architecture/table.md |
 | `src/treg/routers/web.py` | architecture/composition.md, architecture/hub.md, interface/api.md, interface/dashboard.md, interface/landing-sandbox.md, interface/seo.md, interface/skill.md |
 | `src/treg/routers/web_arena.py` | interface/web-arena.md |
 | `src/treg/runner.py` | interface/api.md |
@@ -668,8 +669,9 @@ Regenerate via `scripts/build-map.py`.
 | `tests/test_money_trace_runner.py` | architecture/data-model.md |
 | `tests/test_oauth_billed.py` | architecture/proxy-model.md |
 | `tests/test_oauth_refresh.py` | architecture/auth-secrets.md |
-| `tests/test_org_concurrency.py` | architecture/org-concurrency.md |
+| `tests/test_org_concurrency.py` | architecture/org-concurrency.md, architecture/org-traffic.md |
 | `tests/test_org_concurrency_redis.py` | architecture/org-concurrency.md |
+| `tests/test_org_traffic.py` | architecture/org-traffic.md |
 | `tests/test_passthrough.py` | architecture/proxy-model.md |
 | `tests/test_pinned_read_scope.py` | architecture/multi-tenancy.md |
 | `tests/test_platform_accounts.py` | architecture/proxy-model.md |
@@ -718,6 +720,7 @@ Regenerate via `scripts/build-map.py`.
 | `architecture/money.md` | `policy.py`, `tavily.yaml`, `tinyfish.yaml`, `test_tinyfish.py`, `__init__.py`, `settlement.py`, `__init__.py`, `models.py`, `billing.py`, `idempotency.py`, `intake.py`, `resolve.py`, `octen.py`, `service.py`, `async_bridge.py`, `route.py`, `reserve.py`, `settle.py`, `tomba.yaml`, `asynctasks.py`, `0017_async_task_record.py`, `0018_async_resource_ownership.py`, `0019_async_poll_failures.py`, `referrals.py`, `budgets.py`, `__init__.py`, `money_admission.py`, `money_session.py`, `runner.py`, `stripe.py`, `reconcile.py`, `key_spend_rollup.py`, `0070_api_key_spend_rollup.py`, `test_key_spend_rollup.py`, `referrals.py`, `api.py`, `signup.py`, `promotions.py`, `0033_signup_promo_eligibility.py`, `0071_signup_promo_claim.py`, `admin.py`, `billing.py`, `call.py`, `orgs.py`, `referrals.py`, `test_call_architecture.py`, `test_money_lock_order.py`, `test_money_admission.py`, `test_money_admission_application.py`, `test_money_admission_postgres.py`, `test_archive_batch_postgres.py`, `bench_money_admission.py`, `test_marketplace_call.py`, `test_asynctasks.py` |
 | `architecture/multi-tenancy.md` | `access.py`, `0042_pinned_read_scope.py`, `test_pinned_read_scope.py`, `models.py`, `api.py`, `caller_metadata.py`, `auth.py`, `asynctasks.py`, `resolve.py`, `provider_resources.py`, `provider_resources.py`, `provider_resources.py`, `0043_provider_resources.py`, `signup.py`, `access.py`, `budgets.py`, `publicdemo.py`, `teams.py`, `usage.py`, `access.py`, `api_keys.py`, `session.py`, `promotions.py`, `test_team_limit.py`, `test_auth.py`, `test_token_revocation.py`, `auth.py`, `turnstile.py`, `client_ip.py`, `test_client_ip.py`, `captcha.js`, `test_turnstile.py`, `captcha.test.ts`, `orgs.py`, `resources.py`, `bundles.py`, `db.py`, `0017_async_task_record.py`, `0018_async_resource_ownership.py`, `test_asynctasks.py` |
 | `architecture/org-concurrency.md` | `org_concurrency.py`, `kv.py`, `config.py`, `call.py`, `mcp.py`, `test_org_concurrency.py`, `test_org_concurrency_redis.py` |
+| `architecture/org-traffic.md` | `org_traffic.py`, `bootstrap.py`, `call.py`, `table.py`, `mcp.py`, `test_org_traffic.py`, `test_org_concurrency.py` |
 | `architecture/policy-extensions.md` | `policy.py`, `bootstrap.py`, `signup.py`, `promotions.py`, `test_policy.py` |
 | `architecture/proxy-model.md` | `relay.py`, `jsontext.py`, `ssrf.py`, `api.py`, `authorize.py`, `idempotency.py`, `intake.py`, `resolve.py`, `reserve.py`, `settle.py`, `evidence.py`, `service.py`, `types.py`, `asynctasks.py`, `keyslots.py`, `0069_platform_key_slot.py`, `test_platform_accounts.py`, `client_identity.py`, `call_surface.py`, `sandbox_identity.py`, `access.py`, `publicdemo.py`, `usage.py`, `call.py`, `limits.py`, `test_ssrf_public_addresses.py`, `test_call_application_contract.py`, `test_call_cancellation.py`, `test_call_response_limits.py`, `test_error_capture.py`, `test_marketplace_call.py`, `test_oauth_billed.py`, `test_passthrough.py`, `test_tag_billing.py`, `test_tag_billing_adversarial.py`, `test_call_architecture.py`, `test_asynctasks.py`, `test_relay_content_length.py` |
 | `architecture/search-experiment.md` | `catalog_search.py`, `search_experiment.py`, `interleave.py`, `judge.py`, `0041_searchlog.py`, `0056_searchlog_verdict.py`, `search_experiment_report.sql`, `search_agent_bench.py`, `test_search_experiment.py`, `test_catalog_search.py`, `test_search_agent_bench.py` |
