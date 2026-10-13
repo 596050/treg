@@ -65,9 +65,18 @@
       return new Promise(function (resolve) {
         var el = document.createElement("div"), id = null, view = window.visualViewport;
         el.setAttribute("data-treg-captcha-widget", "");
+        // Shown only when Cloudflare wants a click: a bare checkbox under a dialog is easy to miss.
+        var note = document.createElement("div"), slot = document.createElement("div");
+        note.textContent = "One quick check before we email your code";
+        var dark = theme() === "dark";
+        note.style.cssText = "display:none;margin:0 auto 6px;width:max-content;max-width:300px;padding:5px 10px;"
+          + "border-radius:8px;font:13px/1.4 system-ui,-apple-system,sans-serif;text-align:center;"
+          + "box-shadow:0 1px 4px rgba(0,0,0,.18);" + (dark ? "background:#262626;color:#f2f2f2" : "background:#fff;color:#1d1d1f");
+        el.appendChild(note); el.appendChild(slot);
         place(el);
         host().appendChild(el);
         function follow() { place(el); }
+        function visible() { note.style.display = "block"; follow(); }
         if (view) { view.addEventListener("resize", follow); view.addEventListener("scroll", follow); }
         function finish(value) {
           if (check.done) return;
@@ -78,10 +87,10 @@
         }
         check.cancel = function () { finish("!error"); };
         try {
-          id = turnstile.render(el, {
+          id = turnstile.render(slot, {
             sitekey: SITE_KEY, action: action, appearance: "interaction-only", theme: theme(),
             callback: function (t) { finish(t || "!error"); },
-            "before-interactive-callback": follow,  // about to become visible: measure now
+            "before-interactive-callback": visible,  // about to need a click: explain it, measure now
             // The code names the cause (e.g. 110200 = this hostname is not on the widget).
             "error-callback": function (code) { if (window.console) console.warn("turnstile error", code); finish("!error"); return true; },
             "timeout-callback": function () { finish("!error"); },
