@@ -250,6 +250,11 @@ provider credential.
 
 ## Optional money admission
 
+Root Web requests have a separate, default-disabled [Org concurrency guard](../architecture/org-concurrency.md).
+Its per-Org map and exemptions are environment configuration; enabling requires an explicit Redis
+outage policy and shared Redis. See that fragment for placeholder configuration, lease-loss limits,
+and rollback by disabling. It does not change the money admission or financial cleanup below.
+
 `TREG_MONEY_ADMISSION_ENABLED` defaults to `false`. Enabling it requires a shared Redis-compatible
 store at `TREG_KV_URL`; all participating web and money-worker processes must use the same store
 and rollout settings. No database migration or additional database privileges are required.

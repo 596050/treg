@@ -56,6 +56,10 @@ This keeps OAuth refresh and audience isolation unchanged.
 
 ## Provider authorization remediation
 
+Both call adapters use the shared [Org concurrency guard](org-concurrency.md). Their structured
+results preserve HTTP `Retry-After` as `retry_after`, including the team media adapter, so MCP
+clients can retry a concurrency refusal without access to the internal HTTP response headers.
+
 Provider OAuth remains a human browser action. A catalog-call preflight can return a structured
 HTTP 428 body with the missing or expired grant, capability, scopes, exact CLI command, and safe
 dashboard action. The team MCP `call` tool and directory MCP `catalog_call_read` or
