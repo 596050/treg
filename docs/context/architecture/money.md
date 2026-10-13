@@ -40,6 +40,7 @@ sources:
   - src/treg/application/signup.py
   - src/treg/domain/identity/promotions.py
   - src/treg/alembic/versions/0033_signup_promo_eligibility.py
+  - src/treg/alembic/versions/0071_signup_promo_claim.py
   - src/treg/routers/admin.py
   - src/treg/routers/billing.py
   - src/treg/routers/call.py
@@ -120,8 +121,9 @@ and owns the commit that lands it; neither adapter reaches into the ledger.
 
 `application.signup._grant_signup_promo` calls `identity.promotions.claim_signup_promo` for the
 creating user's ID. A conditional UPDATE consumes `User.signup_promo_available` only for a verified,
-active, non-demo user. It commits in the same transaction as `ledger.grant(once=False)`, the block,
-balance and entry; failed commits roll everything back. Ledger metadata records `source=signup`
+active, non-demo user, then inserts the user's inbox into `SignupPromoClaim`, whose primary key
+refuses a second claim for one mailbox. It commits in the same transaction as
+`ledger.grant(once=False)`, the block, balance and entry; failed commits roll everything back. Ledger metadata records `source=signup`
 and the claiming `user_id`. The ordinary per-org `grant(once=True)` check is not the concurrency
 arbiter and manual/referral grants retain their own semantics.
 
@@ -136,6 +138,16 @@ deleted team ledgers. New application User rows explicitly start eligible. Verif
 eligibility. Team deletion, leaving and ownership changes cannot restore it because it lives on the
 user. Administrative deletion of the user also deletes this marker; this is an account-level guarantee,
 not a permanent per-email denylist or proof that separate accounts belong to different humans.
+
+The inbox is `promotions.promo_inbox(email)`: lowercased, `+tag` subaddressing dropped for every
+domain, and for `gmail.com` / `googlemail.com` the dots removed and the domain folded to
+`gmail.com`. Each alias is still its own login and `User`; only the gift is shared, and a user
+whose inbox was already claimed through another alias loses its own eligibility in the same
+UPDATE. The claim row has no FK and outlives the user, so account deletion does not free an inbox.
+This stops one mailbox from verifying many accounts; it does not stop someone holding many real
+mailboxes or a catch-all domain. Revision `0071` seeds the table from every user already verified
+and no longer eligible (a superset of real claimants) and is a rollback floor: dropping it would
+reopen a gift to every alias of an already-gifted inbox.
 Existing balances and all five money operations are unchanged. During rollout or application rollback,
 keep automatic credit disabled until every serving instance enforces the new rule; old code still
 awards per team even after this additive migration.
