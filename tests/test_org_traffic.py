@@ -1,5 +1,6 @@
 """Bounded local observability, using in-process HTTP/MCP and synthetic organizations only."""
 import asyncio
+import io
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -15,6 +16,15 @@ from treg.routers import call as routes
 from test_marketplace_call import platform_on  # noqa: F401
 from test_org_concurrency import gate, _configure_org  # noqa: F401
 from test_routing import enrichment_on  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def capture_traffic_logs(caplog):
+    traffic.log.addHandler(caplog.handler)
+    try:
+        yield
+    finally:
+        traffic.log.removeHandler(caplog.handler)
 
 
 @pytest.fixture
@@ -50,6 +60,20 @@ def test_percentile_nearest_rank_and_overflow(counter):
     counter.begin(1)
     counter.finish(1, 200, 2**31 + 1)
     assert counter.snapshot()["top"][0]["p95_ms"] is None
+
+
+def test_summary_is_one_parseable_physical_line(counter, monkeypatch, caplog):
+    stream = io.StringIO()
+    handler = next(handler for handler in traffic.log.handlers if handler is not caplog.handler)
+    monkeypatch.setattr(handler, "stream", stream)
+    for org in range(10):
+        counter.begin(org)
+        counter.finish(org, 503, 65)
+    traffic.emit_snapshot()
+    [line] = stream.getvalue().splitlines()
+    event, payload = line.split(" ", 1)
+    assert event == "org_traffic_top"
+    assert len(json.loads(payload)["top"]) == 10
 
 
 def test_cross_window_in_flight_and_completion_denominator(counter):
