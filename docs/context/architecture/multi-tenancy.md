@@ -169,7 +169,8 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   registration. New verified accounts can receive one promotional balance per inbox, so farming
   many real or catch-all inboxes remains an abuse path even though repeated team creation and
   `+tag` / Gmail-dot aliases no longer earn credit. **Entirely configuration**: the classifier
-  (`_is_blocked_email` in `domain/identity/access.py`, pure — it only answers) reads
+  (`_is_blocked_email` in `domain/identity/access.py`, pure - it only answers; it walks the
+  `_norm_email` domain, whose trailing dots are dropped so `a@listed.example.` cannot pass) reads
   `TREG_BLOCKED_EMAIL_DOMAINS` and nothing else, parsed once per distinct value in `config.py`
   (trim, drop a leading `@`/`.`, lowercase, and drop any dotless entry so a typed `com` cannot
   refuse the world). Unset — the default — blocks nothing, and the next domain is a **dashboard
