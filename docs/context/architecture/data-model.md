@@ -474,14 +474,10 @@ uses this metadata, never the encrypted token's shape.
   credentials and return login IDs are Fernet-encrypted. Approval locks the pairing row through its
   transition and Default-key creation; result and OAuth-state consumption use `DELETE RETURNING`.
   Pending, completed and OAuth entries each expire after `HANDSHAKE_TTL`; reads enforce expiry.
-  `_prune_handshakes` uses a separate transaction and a shared `cli_gc` window to admit at most one
-  cleanup batch per minute, capped at 100 expired rows from `cli_login`, `cli_oauth` and `cli_rate`.
-  PostgreSQL skips locked rows; unrelated namespaces and live rows are untouched. Further batches
-  run lazily on later starts, so expiry is immediate but physical removal may lag idle periods or
-  a backlog. `cli_rate` holds atomic per-IP fixed windows only when Redis is not configured; keys
-  are HMAC digests under the session-signing key. Redis limits reject before DB checkout; the
-  unconfigured-KV path still needs a DB connection, and accepted requests update their rate row.
-  No schema migration is needed.
+  `_prune_handshakes` runs on CLI start in a separate transaction, deleting at most 100 expired
+  rows from `cli_login` and `cli_oauth`. PostgreSQL skips locked rows; unrelated namespaces and
+  live rows are untouched. Further batches run on later starts, so expiry is immediate but
+  physical removal may lag idle periods or a backlog. No schema migration is needed.
 
 - **`DenyRule`** - org policy over what may be CALLED: `org_id`, nullable `user_id` (NULL = the whole
   org, set = one member/agent), nullable `project_id` (NULL = any tool, set = only calls **through**

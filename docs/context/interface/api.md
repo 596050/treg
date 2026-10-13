@@ -551,16 +551,13 @@ shared HTTP client. `/auth/logout` remains an HTTP-only cookie action.
   Wrong attempts are bounded. `GET /auth/cli/poll` consumes the selected membership's Default key
   and org exactly once. When no team was selected, it returns only a seven-day bootstrap credential.
   Pairing state and the social-login return mapping are shared through `Ephemeral`. Poll validates
-  the same login-id shape as approve before any storage access. Anonymous start and poll use separate
-  per-IP budgets (`check_cli_rate`): 30 starts per 15 minutes and 1,200 polls per minute, with 429,
-  `Retry-After` and `Cache-Control: no-store` on refusal. IPs come from the ASGI peer after the server's
-  trusted-proxy handling, never directly from a caller's forwarding header. Redis admission happens
-  before acquiring a DB connection when `TREG_KV_URL` is configured; a refused/unavailable counter
-  never falls back. Without configured KV, atomic DB counters provide the same shared limits.
+  the same login-id shape as approve before storage access, returning the usual 200 pending response
+  immediately for a malformed id. Start and poll preserve their existing response shapes.
   A live pending or unknown poll reads without writing or committing the pairing transaction;
-  completed results still require atomic deletion before disclosure. PostgreSQL approval/consumption
-  lock waits are capped at two seconds, with a generic 503 and rollback on storage failure.
+  completed results still require atomic deletion before disclosure. Storage failures roll back
+  and use a generic 503 for CLI API requests; OAuth callbacks use the existing HTML failure page.
   Pairing does not alter email Turnstile enforcement, the CLI browser fallback, or signup eligibility.
+  In-flight logins held by old workers may need to restart once during rollout or rollback.
 
   `GET /auth/me` accepts token or session authentication and returns identity/onboarding state.
   `GET /auth/cli-token` uses `application.auth.issue_cli_token` to return a human membership's
