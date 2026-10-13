@@ -74,7 +74,7 @@ async def test_lease_failures_are_classified_without_secret_data(
         "first_failed_at": "2020-01-01T00:00:00+00:00",
         "last_failed_at": "2020-01-01T00:00:00+00:00",
         "elapsed_max_ms": pytest.approx(25),
-        "socket_timeout_ms": 100, "operation_deadline_ms": 200,
+        "socket_timeout_ms": 1000, "operation_deadline_ms": 1500,
     }
     exposed = json.dumps(rows) + caplog.text
     for secret in ("sensitive-user", "password", "private-host", "private-key", "private-token"):
@@ -124,7 +124,8 @@ async def test_task_cancellation_propagates_without_becoming_a_kv_error(phase):
 
 @pytest.mark.parametrize("phase", _PHASES)
 async def test_outer_deadline_is_distinct_from_redis_socket_timeout(monkeypatch, phase):
-    monkeypatch.setattr(kv, "_TIMEOUT_S", 0.001)
+    monkeypatch.setattr(kv, "_LEASE_ATTEMPT_TIMEOUT_S", 0.002)
+    monkeypatch.setattr(kv, "_LEASE_RETRY_BUDGET_S", 0.004)
 
     async def command(*args, **kwargs):
         await asyncio.Event().wait()
