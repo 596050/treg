@@ -139,8 +139,8 @@ eligibility. Team deletion, leaving and ownership changes cannot restore it beca
 user. Administrative deletion of the user also deletes this marker; this is an account-level guarantee,
 not a permanent per-email denylist or proof that separate accounts belong to different humans.
 
-The inbox is `promotions.promo_inbox(email)`: lowercased, `+tag` subaddressing dropped for every
-domain, and for `gmail.com` / `googlemail.com` the dots removed and the domain folded to
+The inbox is `promotions.promo_inbox(email)`: lowercased, the domain's trailing dots dropped,
+`+tag` subaddressing dropped for every domain, and for `gmail.com` / `googlemail.com` the dots removed and the domain folded to
 `gmail.com`. Each alias is still its own login and `User`; only the gift is shared, and a user
 whose inbox was already claimed through another alias loses its own eligibility in the same
 UPDATE. The claim row has no FK and outlives the user, so account deletion does not free an inbox.

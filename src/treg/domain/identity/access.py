@@ -375,8 +375,11 @@ def _require_can_register(caller: Caller) -> None:
 def _norm_email(email: str) -> str:
     """Canonical email identity: trimmed + lowercased. One human = one identity regardless of the
     case they type. Applied at every identity door + every invite comparison so `Bob@X.com` and
-    `bob@x.com` never fork into two users / two orgs and an invite is always redeemable."""
-    return email.strip().lower()
+    `bob@x.com` never fork into two users / two orgs and an invite is always redeemable. A domain's
+    trailing dots are the fully-qualified spelling of the same domain, so `bob@x.com.` is `bob@x.com`
+    too; left in, they slip a listed domain past the blocklist's label walk."""
+    local, at, domain = email.strip().lower().rpartition("@")
+    return f"{local}{at}{domain.rstrip('.')}" if at else domain
 
 
 # ---- machine identities: the publishable demo token, and agents ----------------------------

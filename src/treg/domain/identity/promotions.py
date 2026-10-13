@@ -17,7 +17,7 @@ def promo_inbox(email: str) -> str:
     of one inbox share a single gift. Login identity keeps the address exactly as entered.
     """
     local, _, domain = email.strip().lower().rpartition("@")
-    local = local.split("+", 1)[0]
+    local, domain = local.split("+", 1)[0], domain.rstrip(".")
     if domain in _DOTLESS_DOMAINS:
         local, domain = local.replace(".", ""), _DOTLESS_DOMAINS[domain]
     return f"{local}@{domain}"

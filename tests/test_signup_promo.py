@@ -137,6 +137,8 @@ async def test_disabled_promo_does_not_consume_new_user_claim(clients, monkeypat
     ('j.a.n.e.d.o.e@googlemail.com', 'janedoe@gmail.com'),
     ('jane.doe+a+b@example.org', 'jane.doe@example.org'),
     (' ops@example.org ', 'ops@example.org'),
+    ('farmer@GMail.com.', 'farmer@gmail.com'),
+    ('ops@example.org..', 'ops@example.org'),
 ])
 def test_promo_inbox_folds_aliases_of_one_mailbox(address, inbox):
     assert promo_inbox(address) == inbox
@@ -145,7 +147,7 @@ def test_promo_inbox_folds_aliases_of_one_mailbox(address, inbox):
 @pytest.mark.parametrize('concurrent', [False, True])
 async def test_aliases_of_one_inbox_share_one_grant(clients, concurrent):
     aliases = ['farm.er+1@gmail.com', 'farmer+2@gmail.com', 'f.a.r.m.e.r@googlemail.com',
-               'farmer@gmail.com']
+               'farmer@gmail.com', 'farmer+3@gmail.com.']
     tokens = [await verified_identity(clients, alias) for alias in aliases]
     if concurrent:
         teams = await asyncio.gather(*(_team(clients, t, f'alias-{i}') for i, t in enumerate(tokens)))

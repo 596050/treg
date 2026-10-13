@@ -89,6 +89,8 @@ def test_ops_tier_parses_case_whitespace_and_leading_marks(ops):
     ("A@FARM-B.EXAMPLE", True),
     ("a@deep.mail.farm-c.example", True),   # the subdomain bypass that must not work
     ("a@farm-d.example", True),             # listed as ".farm-d.example"
+    ("a@farm-a.example.", True),            # a fully-qualified trailing dot is the same domain
+    ("a@mail.farm-c.example..", True),
     # The walk strips whole labels off the front only.
     ("a@notfarm-a.example", False),         # a string suffix, not a subdomain
     ("a@farm-a.example.org", False),        # the listed domain in the middle
