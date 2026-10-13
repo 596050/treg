@@ -299,6 +299,14 @@ cancellation before allowing the admission scope to exit, then propagates cancel
 original failure. It does not introduce a commit or change the application's commit boundaries.
 Waiting for admission holds no database connection.
 
+`money_admission_wait_s` accepts `0 < wait <= 120` seconds and still defaults to five.
+One acquisition deadline covers local-lock waiting and all Redis acquisition attempts; reaching
+Redis does not restart the budget. This is a per-admission wait, not a total call deadline: a
+request can reserve and later settle through separate admission scopes. Cleanup and database
+execution require additional time. The default 15-second lease is independent of queue waiting;
+it starts with a successful acquisition attempt and renews at TTL/3, including while acquiring
+later orgs in a batch. Longer acquisition waits do not require a longer lease TTL.
+
 The application supplies the already-known payer identity through `MarketplaceCall` and
 `DeferredSettle`, an asynchronous task snapshot, the Hub caller, or the org on a reserve.
 Skip-direct overflow does not reserve a parent and does not write `payer_org_id` on that

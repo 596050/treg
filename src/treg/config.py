@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     # with no positive org id refuses before checkout; that refusal is not an HTTP 429.
     money_admission_enabled: bool = False
     money_admission_org_ids: list[PositiveInt] = Field(default_factory=list)
-    money_admission_wait_s: float = Field(default=5.0, gt=0, le=60)
+    money_admission_wait_s: float = Field(default=5.0, gt=0, le=120)
     money_admission_lease_s: float = Field(default=15.0, ge=3, le=300)
 
     # SQLite locally, Postgres on Render — same code path, just swap the URL.
