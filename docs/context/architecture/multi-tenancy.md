@@ -256,7 +256,9 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   refuses (the message points to Google and GitHub, which stay open). A
   `TREG_FIXED_LOGIN_CODES` account skips the check (nothing is mailed; reviewers may script it).
   `treg login --email` cannot pass a browser check: every captcha refusal carries
-  `X-Treg-Captcha: required`, on which the CLI says so and continues with the browser handshake.
+  `X-Treg-Captcha: required`, on which the CLI says so and continues with the browser handshake;
+  a request from the CLI's email door gets a detail naming `treg login`, for released CLIs that
+  only print it.
   Observe mode measures false refusals before enforcing: `event=turnstile_email_start` (outcome,
   reason, `client=cli|browser`) pairs with `event=turnstile_email_verify` (outcome, `new_user`,
   client) logged when a code is redeemed, so per outcome the redeemed share is the share of real

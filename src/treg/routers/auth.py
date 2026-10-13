@@ -81,9 +81,19 @@ _EMAIL_HTTP_ERRORS = {
 CAPTCHA_HEADER = "X-Treg-Captcha"
 
 
-def _email_http_error(exc: auth_use_cases.EmailAuthError) -> HTTPException:
+# A terminal cannot pass a browser check. Released CLIs print `detail` and stop, so tell them the
+# command that works; newer ones read the header and continue in the browser on their own.
+_CLI_CAPTCHA_DETAIL = ("Email codes need a browser check on this server. "
+                       "Run `treg login` without --email to sign in through the browser.")
+
+
+def _email_http_error(exc: auth_use_cases.EmailAuthError, client: str = "browser") -> HTTPException:
     status_code, detail = _EMAIL_HTTP_ERRORS[exc.kind]
-    headers = {CAPTCHA_HEADER: "required"} if exc.kind.startswith("captcha_") else None
+    headers = None
+    if exc.kind.startswith("captcha_"):
+        headers = {CAPTCHA_HEADER: "required"}
+        if client == "cli":
+            detail = _CLI_CAPTCHA_DETAIL
     return HTTPException(status_code=status_code, detail=detail, headers=headers)
 
 
@@ -105,7 +115,7 @@ async def auth_email_start(
         return await auth_use_cases.start_email_login(
             body.email, _client_ip(request), captcha_token=body.captcha_token, client=_client(request))
     except auth_use_cases.EmailAuthError as exc:
-        raise _email_http_error(exc) from exc
+        raise _email_http_error(exc, _client(request)) from exc
 
 
 @app.post("/auth/email/verify")
