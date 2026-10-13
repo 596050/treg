@@ -344,3 +344,13 @@ async def test_enforce_outage_records_unavailable(clients, widget, signups, monk
     widget["answer"] = httpx.ConnectError("down")
     await _sign_up_and_fund(clients, "outage-event@example.org", "tok")
     assert [props["captcha"] for event, props in signups if event == "signup_completed"] == ["unavailable"]
+
+
+async def test_a_released_cli_is_told_which_command_works(clients, widget, monkeypatch):
+    """Released CLIs print `detail` and stop; only newer ones read the header."""
+    monkeypatch.setattr(get_settings(), "turnstile_mode", "enforce")
+    response = await clients.post("/auth/email/start", json={"email": "old-cli@example.org"},
+                                  headers={"X-Treg-Key-Protocol": "1", "user-agent": "python-httpx/0.27"})
+    assert response.status_code == 400
+    assert response.headers["X-Treg-Captcha"] == "required"
+    assert "Run `treg login` without --email" in response.json()["detail"]
