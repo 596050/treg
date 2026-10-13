@@ -27,6 +27,15 @@ provider account and bypass this platform ownership table.
   server-side and makes the upstream call; the consumer's token only authorizes it.
 - **Encryption at rest.** Stored secrets are Fernet-encrypted; the key is an environment variable, never
   in the repo or the database.
+- **CLI pairing is shared and single-use.** `treg login` keeps its pairing and social-login return
+  state in the database with ten-minute validity windows. Pairing codes and completed credentials
+  are encrypted, approval attempts are serialized, and polling atomically consumes a result.
+  Storage failures refuse the operation; there is no process-local fallback. Workers must share
+  the database, encryption key and session-signing secret. A lost response after consumption requires
+  starting a new login; credentials are never republished to make a retry succeed.
+  Expired CLI rows are cleaned in bounded batches outside the pairing transaction. On rollout,
+  an in-flight login from an old worker may need to restart once because its local state cannot
+  be read by the new workers.
 - **Tenant isolation.** Every secret, tool, and record is scoped to an org; access is gated by role and,
   per member, by an explicit tool allow-list. Pinned agent tags additionally scope call/run history,
   archived results and shared-provider async ownership; foreign and untagged records return 404.
@@ -88,15 +97,10 @@ cloud resources apart from one small test object. Production configuration belon
 
 ## Known limitations (by design, documented on purpose)
 
-Honesty is part of the model. Two items are deliberately deferred:
-
-1. **Server runs do not yet have filesystem/network isolation.** The resource limits above cap denial of
-   service, but a full jail (a locked-down user + egress allow-list, like the local sandbox) requires a
-   container deployment and is planned. In the supported hosted configuration the encryption key is
-   an environment variable rather than an on-disk secret file, and only allow-listed CLIs may run.
-2. **The CLI-login handshake is in-process.** The short-lived pairing state for `treg login` lives in the
-   server process (it self-heals on retry and carries no rate-limit value). Running more than one server
-   instance requires sticky routing for that one flow, or moving it to shared storage.
+**Server runs do not yet have filesystem/network isolation.** The resource limits above cap denial of
+service, but a full jail (a locked-down user + egress allow-list, like the local sandbox) requires a
+container deployment and is planned. In the supported hosted configuration the encryption key is
+an environment variable rather than an on-disk secret file, and only allow-listed CLIs may run.
 
 ## Supported versions
 

@@ -159,13 +159,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-# The pairing state machine belongs to the application use case. These aliases keep the staged
-# api.py compatibility exports and the social-login handshake on the exact same mutable objects.
-_cli_states = auth_use_cases._cli_states
-_cli_results = auth_use_cases._cli_results
-_cli_pending = auth_use_cases._cli_pending
 _PAIR_ALPHABET = auth_use_cases._PAIR_ALPHABET
-_prune_handshakes = auth_use_cases._prune_handshakes
 _norm_pair_code = auth_use_cases._norm_pair_code
 _orgs_brief = auth_use_cases._orgs_brief
 
@@ -244,7 +238,9 @@ def _social_http_error(exc: auth_use_cases.SocialLoginError) -> HTTPException:
 @app.get("/auth/github")
 async def auth_github(request: Request, cli: str = "", return_to: str = ""):
     try:
-        started = auth_use_cases.start_github_login(cli, lambda: _login_callback_base(request))
+        started = await auth_use_cases.start_github_login(cli, lambda: _login_callback_base(request))
+    except auth_use_cases.CliPairingError as exc:
+        raise _cli_http_error(exc) from exc
     except auth_use_cases.SocialLoginError as exc:
         raise _social_http_error(exc) from exc
     resp = RedirectResponse(started.url, status_code=302)
@@ -332,6 +328,8 @@ async def auth_github_callback(
             lambda: _login_callback_base(request),
             entry_surface=request.cookies.get("treg_entry_surface", ""),
         )
+    except auth_use_cases.CliPairingError:
+        return _social_login_failure(auth_use_cases.SocialLoginError("callback_failed"))
     except auth_use_cases.SocialLoginError as exc:
         return _social_login_failure(exc)
     return _finish_oauth_login(request, proof.user, proof.cli_state)
@@ -341,7 +339,9 @@ async def auth_github_callback(
 async def auth_google(request: Request, cli: str = "", return_to: str = ""):
     """Human login via Google OAuth — a parallel door to GitHub, same session/CLI-handshake plumbing."""
     try:
-        started = auth_use_cases.start_google_login(cli, lambda: _login_callback_base(request))
+        started = await auth_use_cases.start_google_login(cli, lambda: _login_callback_base(request))
+    except auth_use_cases.CliPairingError as exc:
+        raise _cli_http_error(exc) from exc
     except auth_use_cases.SocialLoginError as exc:
         raise _social_http_error(exc) from exc
     resp = RedirectResponse(started.url, status_code=302)
@@ -362,6 +362,8 @@ async def auth_google_callback(
             lambda: _login_callback_base(request),
             entry_surface=request.cookies.get("treg_entry_surface", ""),
         )
+    except auth_use_cases.CliPairingError:
+        return _social_login_failure(auth_use_cases.SocialLoginError("callback_failed"))
     except auth_use_cases.SocialLoginError as exc:
         return _social_login_failure(exc)
     return _finish_oauth_login(request, proof.user, proof.cli_state)
@@ -373,13 +375,17 @@ cli_router = app
 
 
 @app.post("/auth/cli/start")
-async def auth_cli_start() -> dict:
+async def auth_cli_start(response: Response) -> dict:
     """`treg login` calls this FIRST. The SERVER mints both the login_id and a short pairing code and
     remembers them (pending approval). The code is shown only in that terminal; the browser must echo it
     back at approve time, where it's validated server-side, before any token is issued. So a login the
     user didn't start (a phished /login?cli=<id> link) can't be completed, and the poll endpoint carries
     no code to brute-force. Unauthenticated — on its own it grants nothing."""
-    return await auth_use_cases.start_cli_login()
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await auth_use_cases.start_cli_login()
+    except auth_use_cases.CliPairingError as exc:
+        raise _cli_http_error(exc) from exc
 
 
 @app.get("/auth/cli/poll")
@@ -387,9 +393,13 @@ async def auth_cli_poll(response: Response, login_id: str = "") -> dict:
     """The CLI polls this after opening the browser; returns the identity token once, then forgets it.
     A token only lands here after auth_cli_approve validated the terminal pairing code, so a login the
     user didn't approve never yields one — there is nothing here to brute-force (no code parameter)."""
-    result = await auth_use_cases.poll_cli_login(login_id)
     response.headers["Cache-Control"] = "no-store"
-    return result
+    if not _LOGIN_ID_RE.fullmatch(login_id):
+        return {"status": "pending"}
+    try:
+        return await auth_use_cases.poll_cli_login(login_id)
+    except auth_use_cases.CliPairingError as exc:
+        raise _cli_http_error(exc) from exc
 
 
 # `treg login` mints the login_id with token_urlsafe(18) (24 chars); anything outside this shape is
@@ -416,12 +426,13 @@ _CLI_HTTP_ERRORS = {
     "too_many_wrong_codes": (400, "too many wrong codes — run `treg login` again"),
     "wrong_code": (400, "that code doesn't match the one in your terminal"),
     "not_member": (403, "not a member of that team"),
+    "unavailable": (503, "login storage unavailable — please try again"),
 }
 
 
 def _cli_http_error(exc: auth_use_cases.CliPairingError) -> HTTPException:
     status_code, detail = _CLI_HTTP_ERRORS[exc.kind]
-    return HTTPException(status_code=status_code, detail=detail)
+    return HTTPException(status_code=status_code, detail=detail, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/auth/cli/approve")

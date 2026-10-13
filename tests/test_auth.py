@@ -183,6 +183,54 @@ async def test_bad_state_rejected(login):
     assert cb.status_code == 400
 
 
+async def test_cli_social_callback_returns_to_picker_without_issuing_token(login):
+    provider, client = login
+    started = (await client.post("/auth/cli/start")).json()
+    await client.get(f"/auth/{provider}", params={"cli": started["login_id"]})
+    state = client.cookies.get("treg_oauth_state")
+    callback = await client.get(f"/auth/{provider}/callback", params={"code": "abc", "state": state})
+    assert callback.status_code == 302
+    assert callback.headers["location"] == f"/login?cli={started['login_id']}"
+    assert client.cookies.get(sess.COOKIE)
+    assert (await client.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json() == {
+        "status": "pending",
+    }
+    assert (await client.post("/auth/cli/approve", json=started)).status_code == 200
+    result = (await client.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json()
+    assert sess.read_identity_claims(result["token"])["scope"] == sess.BOOTSTRAP_SCOPE
+
+
+async def test_cli_social_callback_storage_failure_uses_the_browser_error_page(login, monkeypatch, caplog):
+    from types import SimpleNamespace
+    from sqlalchemy.exc import OperationalError
+    from treg.application import auth
+
+    provider, client = login
+    started = (await client.post("/auth/cli/start")).json()
+    await client.get(f"/auth/{provider}", params={"cli": started["login_id"]})
+    state = client.cookies.get("treg_oauth_state")
+    consume = auth._consume_cli_state
+
+    def unavailable():
+        raise OperationalError("synthetic", {"state": "private-test-value"}, Exception("storage down"))
+
+    async def fail_consume(state):
+        with monkeypatch.context() as patch:
+            patch.setattr(auth, "database", SimpleNamespace(session_maker=unavailable))
+            return await consume(state)
+
+    monkeypatch.setattr(auth, "_consume_cli_state", fail_consume)
+    response = await client.get(f"/auth/{provider}/callback", params={"code": "abc", "state": state})
+    assert response.status_code == 502  # the existing callback_failed page/status
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Login failed" in response.text and "Please try again" in response.text
+    assert "private-test-value" not in response.text and "private-test-value" not in caplog.text
+    assert not client.cookies.get(sess.COOKIE)
+    assert (await client.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json() == {
+        "status": "pending",
+    }
+
+
 async def test_no_session_no_token_is_401(gc):
     assert (await gc.get("/auth/me")).status_code == 401
     assert (await gc.get("/tools")).status_code == 401

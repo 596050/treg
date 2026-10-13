@@ -159,6 +159,11 @@ jobs:
           tests/test_key_spend_rollup.py
           tests/test_api_key_spend.py
           tests/test_api_keys.py
+          tests/test_cli_pairing.py
+          tests/test_login_page.py
+          tests/test_auth.py
+          tests/test_turnstile.py
+          tests/test_signup_promo.py
           tests/test_postgres_reset.py
           tests/test_read_replica.py
           tests/test_admin_errors_replica.py

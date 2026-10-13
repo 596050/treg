@@ -532,12 +532,12 @@ class Bundle(SQLModel, table=True):
 
 class Ephemeral(SQLModel, table=True):
     """Short-lived server state that must survive a restart and stay correct across instances:
-    the emailed OTP code + its brute-force counter, and the auth rate-limit sliding windows. Keyed
-    by (ns, k) — a namespace ('otp' | 'otp_start' | 'sandbox_hit') plus the key within it; `v` is an
+    emailed OTPs, auth rate-limit windows, and CLI pairing handshakes. Keyed
+    by (ns, k) — a namespace plus the key within it; `v` is an
     opaque JSON payload; rows past `expires_at` are swept lazily (see treg.ratestore). This is the
     DB home for what used to be per-process dicts (backlog #3) — so counters can't be reset by a
-    restart and stay correct on more than one instance. NOT the CLI-login handshake, which is
-    deliberately still in-process (short-lived, self-heals on retry — see api._cli_pending)."""
+    restart and stay correct on more than one instance. CLI pairing uses locked updates and atomic
+    consumption in application.auth; its codes and completed credentials are encrypted."""
 
     ns: str = Field(primary_key=True)
     k: str = Field(primary_key=True)

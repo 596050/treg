@@ -468,9 +468,16 @@ uses this metadata, never the encrypted token's shape.
   opaque JSON `v` and an `expires_at` (rows are swept lazily). This is the DB home for what used to be
   per-process dicts in the auth HTTP layer (backlog #3): counters can no longer be reset by a redeploy,
   and a per-IP / per-email cap can't be weakened by running more than one instance. The access helpers live in
-  `ratestore.py` (`kv_put`/`kv_get`/`kv_pop`, `rate_check` sliding-window, `sweep`). NOT the CLI-login
-  handshake - that is deliberately still in-process (`application.auth._cli_pending`, short-lived,
-  self-heals on retry).
+  `ratestore.py` (`kv_put`/`kv_get`/`kv_pop`, `rate_check` sliding-window, `sweep`). CLI pairing also uses
+  this table: `application.auth` owns `cli_login` (pending code/attempts or completed result) and
+  `cli_oauth` (social-login return mapping). Their keys hash the login ID or OAuth state; codes,
+  credentials and return login IDs are Fernet-encrypted. Approval locks the pairing row through its
+  transition and Default-key creation; result and OAuth-state consumption use `DELETE RETURNING`.
+  Pending, completed and OAuth entries each expire after `HANDSHAKE_TTL`; reads enforce expiry.
+  `_prune_handshakes` runs on CLI start in a separate transaction, deleting at most 100 expired
+  rows from `cli_login` and `cli_oauth`. PostgreSQL materializes the candidate batch and skips
+  locked rows; unrelated namespaces and live rows are untouched. Further batches run on later starts, so expiry is immediate but
+  physical removal may lag idle periods or a backlog. No schema migration is needed.
 
 - **`DenyRule`** - org policy over what may be CALLED: `org_id`, nullable `user_id` (NULL = the whole
   org, set = one member/agent), nullable `project_id` (NULL = any tool, set = only calls **through**
