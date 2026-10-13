@@ -9,12 +9,15 @@ import importlib.util
 import json
 import os
 import sys
+import time
+from contextlib import AsyncExitStack
 from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, update
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient, ConnectError
+from sqlalchemy import event, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -24,7 +27,9 @@ from treg.application import auth
 from treg.config import get_settings
 from treg.domain.identity import session as sess
 from treg.infra import db as database
+from treg.infra import kv, turnstile
 from treg.models import ApiKey, Ephemeral, Membership, Org, User
+from treg.routers import auth as auth_routes
 from treg.timeutil import utcnow_naive
 
 
@@ -65,6 +70,27 @@ async def workers(monkeypatch):
         for engine in engines:
             await engine.dispose()
         get_settings.cache_clear()
+
+
+@pytest.fixture
+async def worker_clients(workers, monkeypatch):
+    async with AsyncExitStack() as stack:
+        clients = []
+        for index, worker in enumerate(workers.modules):
+            name = f"treg.routers._pairing_test_worker_{index}"
+            spec = importlib.util.spec_from_file_location(name, auth_routes.__file__)
+            router = importlib.util.module_from_spec(spec)
+            monkeypatch.setitem(sys.modules, name, router)
+            spec.loader.exec_module(router)
+            router.auth_use_cases = worker
+            server = FastAPI()
+            server.include_router(router.email_router)
+            server.include_router(router.cli_router)
+            clients.append(await stack.enter_async_context(AsyncClient(
+                transport=ASGITransport(app=server, client=("203.0.113.10", 1234)),
+                base_url="http://registry", headers={"Origin": "http://registry"},
+            )))
+        yield clients
 
 
 async def _approve(worker, context, started, org=None):
@@ -355,3 +381,243 @@ asyncio.run(run())
     result = await fresh_process("poll_cli_login", started["login_id"])
     assert sess.read_identity_claims(result["token"])["org"] == workers.org
     assert await fresh_process("poll_cli_login", started["login_id"]) == {"status": "pending"}
+
+
+@pytest.mark.parametrize("login_id", ["", "no", "a" * 129, "valid-id\n", "<script>alert(1)</script>"])
+async def test_invalid_poll_never_opens_a_store(workers, worker_clients, monkeypatch, login_id):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid poll must not access DB or KV")
+
+    for worker in workers.modules:
+        monkeypatch.setattr(worker.database, "session_maker", forbidden)
+        monkeypatch.setattr(worker.kv, "store", forbidden)
+    response = await worker_clients[0].get("/auth/cli/poll", params={"login_id": login_id})
+    assert response.status_code == 400
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("poll", [False, True])
+async def test_ip_budget_is_atomic_across_workers_and_ignores_spoofed_forwarding(
+    workers, worker_clients, monkeypatch, poll,
+):
+    for worker in workers.modules:
+        monkeypatch.setattr(worker, "CLI_POLL_MAX_PER_IP" if poll else "CLI_START_MAX_PER_IP", 3)
+    async def request(index):
+        client = worker_clients[index % 3]
+        headers = {"X-Forwarded-For": f"198.51.100.{index}"}
+        if poll:
+            return await client.get("/auth/cli/poll", params={"login_id": "synthetic-login"}, headers=headers)
+        return await client.post("/auth/cli/start", headers=headers)
+
+    responses = await asyncio.gather(*(request(i) for i in range(12)))
+    assert sorted(r.status_code for r in responses) == [200] * 3 + [429] * 9
+    for response in responses:
+        assert response.headers["cache-control"] == "no-store"
+        if response.status_code == 429:
+            assert int(response.headers["retry-after"]) == (60 if poll else 900)
+    async with database.session_maker() as db:
+        rows = (await db.execute(select(Ephemeral))).scalars().all()
+    assert sum(row.ns == auth.CLI_LOGIN_NS for row in rows) == (0 if poll else 3)
+    assert "203.0.113.10" not in str([(r.k, r.v) for r in rows])
+    # A different peer has a distinct budget; the other operation is also independent.
+    await workers.modules[1].check_cli_rate("203.0.113.11", poll=poll)
+    await workers.modules[2].check_cli_rate("203.0.113.10", poll=not poll)
+    future = utcnow_naive() + timedelta(seconds=901)
+    monkeypatch.setattr(workers.modules[2], "_utcnow_naive", lambda: future)
+    await workers.modules[2].check_cli_rate("203.0.113.10", poll=poll)
+
+
+async def test_configured_kv_refusal_stops_before_db_and_never_falls_back(
+    workers, worker_clients, monkeypatch,
+):
+    def forbidden():
+        pytest.fail("a refused KV budget must not open the DB")
+
+    store = kv.RedisStore("redis://127.0.0.1:1")
+    monkeypatch.setattr(kv, "configured", lambda: True)
+    monkeypatch.setattr(kv, "store", lambda: store)
+    for worker in workers.modules:
+        monkeypatch.setattr(worker.database, "session_maker", forbidden)
+    try:
+        assert (await worker_clients[0].post("/auth/cli/start")).status_code == 429
+        assert (await worker_clients[1].get("/auth/cli/poll", params={"login_id": "synthetic-login"})).status_code == 429
+    finally:
+        await store.aclose()
+
+
+@pytest.mark.skipif(not os.environ.get("TREG_TEST_KV_URL"), reason="requires scratch Redis")
+@pytest.mark.parametrize("poll", [False, True])
+async def test_independent_redis_clients_share_the_ip_budget(workers, monkeypatch, poll):
+    stores = [kv.RedisStore(os.environ["TREG_TEST_KV_URL"]) for _ in workers.modules]
+    keys = []
+    for worker, store in zip(workers.modules, stores):
+        original = store.take
+        async def record(key, *args, take=original):
+            keys.append(key)
+            return await take(key, *args)
+        monkeypatch.setattr(store, "take", record)
+        monkeypatch.setattr(worker, "kv", SimpleNamespace(configured=lambda: True, store=lambda s=store: s))
+        monkeypatch.setattr(worker, "CLI_POLL_MAX_PER_IP" if poll else "CLI_START_MAX_PER_IP", 5)
+    try:
+        outcomes = await asyncio.gather(*(
+            worker.check_cli_rate("203.0.113.10", poll=poll) for worker in workers.modules * 4
+        ), return_exceptions=True)
+        assert sum(outcome is None for outcome in outcomes) == 5
+        assert sum(getattr(outcome, "kind", "").endswith("rate_limited") for outcome in outcomes) == 7
+        assert len(set(keys)) == 1 and "203.0.113.10" not in keys[0]
+        assert 0 < await stores[0]._client.ttl(keys[0]) <= (60 if poll else 900)
+        async with database.session_maker() as db:
+            assert not (await db.execute(select(Ephemeral))).scalars().all()
+    finally:
+        if keys:
+            await stores[0]._client.delete(*set(keys))
+        for store in stores:
+            await store.aclose()
+
+
+async def test_pending_and_unknown_polls_are_read_only(workers):
+    started = await workers.modules[0].start_cli_login()
+    statements, commits = [], []
+    engine = workers.engines[1].sync_engine
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lstrip().split()[0].upper())
+    def commit(conn):
+        commits.append(True)
+    event.listen(engine, "before_cursor_execute", capture)
+    event.listen(engine, "commit", commit)
+    try:
+        for login_id in (started["login_id"], "synthetic-unknown"):
+            assert await workers.modules[1].poll_cli_login(login_id) == {"status": "pending"}
+        assert statements == ["SELECT", "SELECT"] and commits == []
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+        event.remove(engine, "commit", commit)
+
+
+async def test_cleanup_is_bounded_shared_and_leaves_other_namespaces(workers, monkeypatch):
+    old = utcnow_naive() - timedelta(seconds=100)
+    async with database.session_maker() as db:
+        for i in range(130):
+            ns = (auth.CLI_LOGIN_NS, auth.CLI_OAUTH_NS, auth.CLI_RATE_NS)[i % 3]
+            db.add(Ephemeral(ns=ns, k=str(i), v={}, expires_at=old))
+        db.add(Ephemeral(ns=auth.OTP_NS, k="unrelated", v={}, expires_at=old))
+        await db.commit()
+    await asyncio.gather(*(worker.start_cli_login() for worker in workers.modules * 6))
+    async with database.session_maker() as db:
+        rows = (await db.execute(select(Ephemeral).where(Ephemeral.expires_at <= old))).scalars().all()
+    assert len(rows) == 31 and any(r.ns == auth.OTP_NS for r in rows)
+    # Advance a whole cleanup interval: a different worker can claim the next batch.
+    future = utcnow_naive() + timedelta(seconds=61)
+    monkeypatch.setattr(workers.modules[2], "_utcnow_naive", lambda: future)
+    await workers.modules[2].start_cli_login()
+    async with database.session_maker() as db:
+        rows = (await db.execute(select(Ephemeral).where(Ephemeral.expires_at <= old))).scalars().all()
+    assert [(r.ns, r.k) for r in rows] == [(auth.OTP_NS, "unrelated")]
+
+
+async def test_postgres_cleanup_skips_locked_expired_handshakes(workers):
+    if workers.engines[0].dialect.name != "postgresql":
+        pytest.skip("PostgreSQL SKIP LOCKED")
+    old = utcnow_naive() - timedelta(seconds=1)
+    async with database.session_maker() as db:
+        db.add_all([Ephemeral(ns=auth.CLI_LOGIN_NS, k=key, v={}, expires_at=old)
+                    for key in ("locked", "free")])
+        await db.commit()
+    async with workers.modules[0].database.session_maker() as blocker:
+        await blocker.execute(update(Ephemeral).where(
+            Ephemeral.ns == auth.CLI_LOGIN_NS, Ephemeral.k == "locked",
+        ).values(k=Ephemeral.k))
+        await asyncio.wait_for(workers.modules[1]._prune_handshakes(), 1)
+        async with database.session_maker() as db:
+            assert await db.get(Ephemeral, (auth.CLI_LOGIN_NS, "free")) is None
+            assert await db.get(Ephemeral, (auth.CLI_LOGIN_NS, "locked")) is not None
+
+
+async def test_cleanup_commits_separately_from_new_handshake(workers, monkeypatch):
+    old = utcnow_naive() - timedelta(seconds=1)
+    async with database.session_maker() as db:
+        db.add(Ephemeral(ns=auth.CLI_LOGIN_NS, k="expired", v={}, expires_at=old))
+        await db.commit()
+    class FailedInsert(AsyncSession):
+        async def commit(self):
+            if self.new:
+                raise OperationalError("synthetic", {}, Exception("insert failed"))
+            await super().commit()
+    worker = workers.modules[0]
+    monkeypatch.setattr(worker.database, "session_maker", async_sessionmaker(
+        workers.engines[0], class_=FailedInsert, expire_on_commit=False,
+    ))
+    with pytest.raises(worker.CliPairingError, match="unavailable"):
+        await worker.start_cli_login()
+    async with database.session_maker() as db:
+        assert await db.get(Ephemeral, (auth.CLI_LOGIN_NS, "expired")) is None
+        assert (await db.execute(select(Ephemeral).where(Ephemeral.ns == auth.CLI_LOGIN_NS))).first() is None
+
+
+async def test_postgres_approval_lock_wait_is_bounded_and_recoverable(workers):
+    if workers.engines[0].dialect.name != "postgresql":
+        pytest.skip("PostgreSQL row-lock timeout")
+    a, b, c = workers.modules
+    started = await a.start_cli_login()
+    async with a.database.session_maker() as blocker:
+        await blocker.execute(update(Ephemeral).where(
+            Ephemeral.ns == auth.CLI_LOGIN_NS, Ephemeral.k == crypto.hash_token(started["login_id"]),
+        ).values(k=Ephemeral.k))
+        began = time.monotonic()
+        with pytest.raises(b.CliPairingError, match="unavailable"):
+            await asyncio.wait_for(_approve(b, workers, started), 4)
+        assert 1.5 <= time.monotonic() - began < 4
+        assert (await _row(started)).v["attempts"] == auth.CLI_APPROVE_MAX_TRIES
+    await _approve(c, workers, started)
+    assert "token" in await a.poll_cli_login(started["login_id"])
+
+
+@pytest.mark.parametrize("verification", ["pass", "secret_rejected", "unavailable"])
+async def test_turnstile_email_browser_pairing_across_workers(
+    workers, worker_clients, monkeypatch, caplog, verification,
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "turnstile_site_key", "synthetic-site")
+    monkeypatch.setattr(settings, "turnstile_secret", "synthetic-secret")
+    monkeypatch.setattr(settings, "turnstile_hostnames", "registry")
+    monkeypatch.setattr(settings, "turnstile_mode", "enforce")
+    forms, delivered = [], []
+    async def siteverify(form):
+        forms.append(form)
+        if verification == "unavailable":
+            raise ConnectError("synthetic transport failure")
+        if verification == "secret_rejected":
+            return {"success": False, "error-codes": ["invalid-input-secret"]}
+        return {"success": True, "action": "email_start", "hostname": "registry"}
+    async def capture_otp(email, code, **kwargs):
+        delivered.append(code)
+    monkeypatch.setattr(turnstile, "siteverify", siteverify)
+    monkeypatch.setattr(auth.email_sender, "send_otp", capture_otp)
+    caplog.set_level("INFO", logger="treg")
+    a, b, c = worker_clients
+    started = (await a.post("/auth/cli/start")).json()
+    email = " Pair.Ing+flow@GMail.com. "
+    refused = await b.post("/auth/email/start", json={"email": email}, headers={"X-Treg-Key-Protocol": "1"})
+    assert refused.status_code == 400 and refused.headers["x-treg-captcha"] == "required"
+    assert "without --email" in refused.text
+    page = await c.get("/login", params={"cli": started["login_id"]})
+    assert page.status_code == 200 and 'src="/captcha.js"' in page.text
+    response = await b.post("/auth/email/start", json={"email": email, "captcha_token": "synthetic-widget-token"})
+    assert response.status_code == 200
+    otp = response.json().get("dev_code") or delivered[0]
+    verified = await c.post("/auth/email/verify", json={"email": email, "code": otp})
+    assert verified.status_code == 200
+    a.cookies.set(sess.COOKIE, c.cookies.get(sess.COOKIE))
+    wrong = await a.post("/auth/cli/approve", json={**started, "code": "0000"})
+    assert wrong.status_code == 400
+    assert (await a.post("/auth/cli/approve", json=started)).status_code == 200
+    result = (await b.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json()
+    assert result["email"] == "pair.ing+flow@gmail.com"
+    claims = sess.read_identity_claims(result["token"])
+    assert claims["scope"] == sess.BOOTSTRAP_SCOPE
+    assert (await c.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json() == {"status": "pending"}
+    async with database.session_maker() as db:
+        user = await db.get(User, claims["uid"])
+        assert user.signup_promo_available is (verification == "pass")
+    assert len(forms) == 1
+    assert "synthetic-widget-token" not in caplog.text and "synthetic-secret" not in caplog.text

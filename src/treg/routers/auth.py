@@ -375,7 +375,7 @@ cli_router = app
 
 
 @app.post("/auth/cli/start")
-async def auth_cli_start(response: Response) -> dict:
+async def auth_cli_start(request: Request, response: Response) -> dict:
     """`treg login` calls this FIRST. The SERVER mints both the login_id and a short pairing code and
     remembers them (pending approval). The code is shown only in that terminal; the browser must echo it
     back at approve time, where it's validated server-side, before any token is issued. So a login the
@@ -383,18 +383,22 @@ async def auth_cli_start(response: Response) -> dict:
     no code to brute-force. Unauthenticated — on its own it grants nothing."""
     response.headers["Cache-Control"] = "no-store"
     try:
+        await auth_use_cases.check_cli_rate(_cli_client_ip(request))
         return await auth_use_cases.start_cli_login()
     except auth_use_cases.CliPairingError as exc:
         raise _cli_http_error(exc) from exc
 
 
 @app.get("/auth/cli/poll")
-async def auth_cli_poll(response: Response, login_id: str = "") -> dict:
+async def auth_cli_poll(request: Request, response: Response, login_id: str = "") -> dict:
     """The CLI polls this after opening the browser; returns the identity token once, then forgets it.
     A token only lands here after auth_cli_approve validated the terminal pairing code, so a login the
     user didn't approve never yields one — there is nothing here to brute-force (no code parameter)."""
     response.headers["Cache-Control"] = "no-store"
+    if not _LOGIN_ID_RE.fullmatch(login_id):
+        raise HTTPException(status_code=400, detail="bad login_id", headers={"Cache-Control": "no-store"})
     try:
+        await auth_use_cases.check_cli_rate(_cli_client_ip(request), poll=True)
         return await auth_use_cases.poll_cli_login(login_id)
     except auth_use_cases.CliPairingError as exc:
         raise _cli_http_error(exc) from exc
@@ -403,6 +407,12 @@ async def auth_cli_poll(response: Response, login_id: str = "") -> dict:
 # `treg login` mints the login_id with token_urlsafe(18) (24 chars); anything outside this shape is
 # not one of ours. It's echoed into the /login page's JS, so the whitelist is also the XSS guard.
 _LOGIN_ID_RE = re.compile(r"[A-Za-z0-9_-]{8,128}")
+
+
+def _cli_client_ip(request: Request) -> str:
+    # ASGI's peer has already passed the server's trusted-proxy handling. Do not let a raw,
+    # caller-supplied X-Forwarded-For header rotate the budget on every request.
+    return request.client.host if request.client else "?"
 
 
 class CliApproveIn(BaseModel):
@@ -425,12 +435,18 @@ _CLI_HTTP_ERRORS = {
     "wrong_code": (400, "that code doesn't match the one in your terminal"),
     "not_member": (403, "not a member of that team"),
     "unavailable": (503, "login storage unavailable — please try again"),
+    "start_rate_limited": (429, "too many login requests — please wait a few minutes"),
+    "poll_rate_limited": (429, "too many login polls — please wait a minute"),
 }
 
 
 def _cli_http_error(exc: auth_use_cases.CliPairingError) -> HTTPException:
     status_code, detail = _CLI_HTTP_ERRORS[exc.kind]
-    return HTTPException(status_code=status_code, detail=detail, headers={"Cache-Control": "no-store"})
+    headers = {"Cache-Control": "no-store"}
+    if status_code == 429:
+        headers["Retry-After"] = str(auth_use_cases.CLI_POLL_WINDOW_S if exc.kind == "poll_rate_limited"
+                                     else auth_use_cases.CLI_START_WINDOW_S)
+    return HTTPException(status_code=status_code, detail=detail, headers=headers)
 
 
 @app.post("/auth/cli/approve")

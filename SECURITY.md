@@ -33,6 +33,11 @@ provider account and bypass this platform ownership table.
   Storage failures refuse the operation; there is no process-local fallback. Workers must share
   the database, encryption key and session-signing secret. A lost response after consumption requires
   starting a new login; credentials are never republished to make a retry succeed.
+  Anonymous start/poll requests are IP-limited before pairing access. Configured Redis limits
+  reject without a DB checkout and fail closed; installations without Redis use atomic shared
+  DB counters. Configure the ASGI server's trusted proxy peers correctly for per-client budgets;
+  arbitrary forwarding headers are not trusted. IP identifiers are keyed digests, and expired
+  CLI rows are cleaned in bounded, globally throttled batches outside the pairing transaction.
 - **Tenant isolation.** Every secret, tool, and record is scoped to an org; access is gated by role and,
   per member, by an explicit tool allow-list. Pinned agent tags additionally scope call/run history,
   archived results and shared-provider async ownership; foreign and untagged records return 404.

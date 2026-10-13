@@ -15,7 +15,8 @@ from typing import Any
 from urllib.parse import quote
 
 from cryptography.fernet import InvalidToken
-from sqlalchemy import delete, func, update
+from sqlalchemy import case, delete, func, text, tuple_, update
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -24,7 +25,7 @@ from .. import audit, crypto, email as email_sender, ratestore
 from ..application.onboard import demo as demo_seed
 from ..application.onboard import first_run
 from ..infra import db as database
-from ..infra import turnstile
+from ..infra import kv, turnstile
 from ..config import get_settings
 from ..domain.identity import session as sess
 from ..domain.identity import mcp_oauth
@@ -65,16 +66,87 @@ AUTH_CODE_TTL_S = 300   # a code is redeemed within seconds; five minutes is gen
 # Keys hash the poll/state capabilities; codes and result credentials are encrypted at rest.
 CLI_LOGIN_NS = "cli_login"
 CLI_OAUTH_NS = "cli_oauth"
+CLI_RATE_NS = "cli_rate"
+CLI_GC_NS = "cli_gc"
+CLI_START_WINDOW_S = 900
+CLI_START_MAX_PER_IP = 30
+CLI_POLL_WINDOW_S = 60
+CLI_POLL_MAX_PER_IP = 1200  # room for concurrent logins behind an office/NAT
+CLI_GC_INTERVAL_S = 60
+CLI_GC_BATCH_SIZE = 100
 HANDSHAKE_TTL = 600                  # seconds an abandoned login handshake lingers before eviction
 CLI_APPROVE_MAX_TRIES = 8           # wrong pairing-code attempts before a pending login is discarded
 _PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # unambiguous (no O/0/I/1); matches the CLI's charset
 
 
-async def _prune_handshakes(db: AsyncSession) -> None:
-    await db.execute(delete(Ephemeral).where(
-        Ephemeral.ns.in_((CLI_LOGIN_NS, CLI_OAUTH_NS)),
-        Ephemeral.expires_at <= _utcnow_naive(),
-    ).execution_options(synchronize_session=False))
+async def _cli_lock_timeout(db: AsyncSession) -> None:
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(text("SET LOCAL lock_timeout = '2s'"))
+
+
+async def _take_cli_db_budget(db: AsyncSession, ns: str, key: str, limit: int, ttl_s: int) -> bool:
+    """Fixed window shared by all workers, including installations without Redis.
+
+    Saturated windows are read-only. The conditional upsert arbitrates simultaneous arrivals;
+    a read/modify/write JSON counter alone would lose increments across independent sessions.
+    """
+    now = _utcnow_naive()
+    row = await db.get(Ephemeral, (ns, key))
+    if row is not None and row.expires_at > now and row.v["count"] >= limit:
+        return False
+    await _cli_lock_timeout(db)
+    insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
+    expires = now + timedelta(seconds=ttl_s)
+    count = case((Ephemeral.expires_at <= now, 1), else_=Ephemeral.v["count"].as_integer() + 1)
+    value = (func.json_build_object("count", count) if db.get_bind().dialect.name == "postgresql"
+             else func.json_object("count", count))
+    stmt = insert(Ephemeral).values(ns=ns, k=key, v={"count": 1}, expires_at=expires)
+    accepted = (await db.execute(stmt.on_conflict_do_update(
+        index_elements=[Ephemeral.ns, Ephemeral.k],
+        set_={"v": value, "expires_at": case((Ephemeral.expires_at <= now, expires),
+                                            else_=Ephemeral.expires_at)},
+        where=(Ephemeral.expires_at <= now) | (Ephemeral.v["count"].as_integer() < limit),
+    ).returning(Ephemeral.k))).scalar_one_or_none()
+    return accepted is not None
+
+
+async def check_cli_rate(client_ip: str, *, poll: bool = False) -> None:
+    """Admit anonymous CLI traffic before touching pairing rows; never fail open.
+
+    Use the existing Redis counter when configured, without holding a DB connection. A Redis
+    refusal (including unavailable) never falls back. The DB path is only for an unconfigured KV.
+    Store a keyed digest, not a raw IP or a reversible unsalted address hash.
+    """
+    operation = "poll" if poll else "start"
+    limit = CLI_POLL_MAX_PER_IP if poll else CLI_START_MAX_PER_IP
+    window = CLI_POLL_WINDOW_S if poll else CLI_START_WINDOW_S
+    key = hmac.digest(sess._key(), f"cli:{operation}:{client_ip}".encode(), "sha256").hex()
+    if kv.configured():
+        allowed = await kv.store().take(f"treg:cli:{operation}:{key}", limit, window)
+    else:
+        async with _cli_store_session() as db:
+            allowed = await _take_cli_db_budget(db, CLI_RATE_NS, key, limit, window)
+            if allowed:
+                await db.commit()
+    if not allowed:
+        raise CliPairingError("poll_rate_limited" if poll else "start_rate_limited")
+
+
+async def _prune_handshakes() -> None:
+    """At most one bounded batch per minute across workers, in its own transaction."""
+    async with _cli_store_session() as db:
+        if not await _take_cli_db_budget(db, CLI_GC_NS, "sweep", 1, CLI_GC_INTERVAL_S):
+            return
+        expired = (select(Ephemeral.ns, Ephemeral.k).where(
+            Ephemeral.ns.in_((CLI_LOGIN_NS, CLI_OAUTH_NS, CLI_RATE_NS)),
+            Ephemeral.expires_at <= _utcnow_naive(),
+        ).order_by(Ephemeral.expires_at).limit(CLI_GC_BATCH_SIZE)
+                   .with_for_update(skip_locked=True))
+        await db.execute(delete(Ephemeral).where(
+            tuple_(Ephemeral.ns, Ephemeral.k).in_(expired),
+            Ephemeral.expires_at <= _utcnow_naive(),
+        ).execution_options(synchronize_session=False))
+        await db.commit()
 
 
 class EmailAuthError(Exception):
@@ -347,8 +419,8 @@ async def start_cli_login() -> dict:
     """Mint and retain the server side of a CLI pairing handshake."""
     login_id = _secrets.token_urlsafe(18)
     code = "".join(_secrets.choice(_PAIR_ALPHABET) for _ in range(4))
+    await _prune_handshakes()
     async with _cli_store_session() as db:
-        await _prune_handshakes(db)
         db.add(Ephemeral(
             ns=CLI_LOGIN_NS, k=crypto.hash_token(login_id),
             v={"code": crypto.encrypt(code), "attempts": CLI_APPROVE_MAX_TRIES},
@@ -361,10 +433,15 @@ async def start_cli_login() -> dict:
 async def poll_cli_login(login_id: str) -> dict:
     """Return a completed handshake exactly once, otherwise report it pending."""
     async with _cli_store_session() as db:
+        key = crypto.hash_token(login_id)
+        pending = await db.get(Ephemeral, (CLI_LOGIN_NS, key))
+        if pending is None or (pending.expires_at > _utcnow_naive() and "result" not in pending.v):
+            return {"status": "pending"}  # no writes or commit for the ordinary waiting poll
+        await _cli_lock_timeout(db)
         # DELETE RETURNING arbitrates competing consumers in the database. A pending entry must
         # survive polling, and no credential leaves this function before deletion is committed.
         entry = (await db.execute(delete(Ephemeral).where(
-            Ephemeral.ns == CLI_LOGIN_NS, Ephemeral.k == crypto.hash_token(login_id),
+            Ephemeral.ns == CLI_LOGIN_NS, Ephemeral.k == key,
             (Ephemeral.v["result"].as_string().is_not(None))
             | (Ephemeral.expires_at <= _utcnow_naive()),
         ).returning(Ephemeral.v, Ephemeral.expires_at)
@@ -412,6 +489,7 @@ async def approve_cli_login(
     session_cookie: str, login_id: str, code: str | None, requested_org: str | None,
 ) -> dict:
     async with _cli_store_session() as db:
+        await _cli_lock_timeout(db)
         user = await _user_from_session(session_cookie, db)
         if user is None:
             raise CliPairingError("no_session")
@@ -527,8 +605,8 @@ async def revoke_identity_tokens(user_id: int) -> RevokedIdentityTokens:
 
 
 async def _remember_cli_state(state: str, cli: str) -> None:
+    await _prune_handshakes()
     async with _cli_store_session() as db:
-        await _prune_handshakes(db)
         db.add(Ephemeral(
             ns=CLI_OAUTH_NS, k=crypto.hash_token(state), v={"login_id": crypto.encrypt(cli)},
             expires_at=_utcnow_naive() + timedelta(seconds=HANDSHAKE_TTL),
