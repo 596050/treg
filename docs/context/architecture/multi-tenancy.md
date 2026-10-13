@@ -73,7 +73,8 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   `require_member` / `require_identity`.
 - **`User`** - identity only: `id, email (unique), created_at`, plus `email_verified_at` and
   `signup_promo_available`. No token, no role. Verified accounts can claim signup credit once
-  across all teams; old accounts cannot claim again. See [money](money.md#signup-credit-eligibility).
+  across all teams and once per inbox (aliases share it); old accounts cannot claim again. See
+  [money](money.md#signup-credit-eligibility).
 - **`Membership`** — `user_id, org_id, role (owner|admin|member|viewer), token_hash (idx), webhook_url,
   daily_call_cap` (per-user daily usage cap; `-1` = unlimited, admin-set — see the API fragment's
   usage-metering section), **`tool_access`** (JSON; **NULL = ALL tools** — the default, so nobody is
@@ -165,8 +166,9 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   (which predates it and creates a `User` directly) and `auth_email_start` (refuse early, mint no code).
   `list_members` carries `is_agent` so one roster can show people and machines apart.
 - **Email-domain blocklist.** The same choke points, for throwaway mail and domains used for bulk
-  registration. New verified accounts can receive one promotional balance, so farming verified inboxes
-  remains an abuse path even though repeated team creation no longer earns credit. **Entirely configuration**: the classifier
+  registration. New verified accounts can receive one promotional balance per inbox, so farming
+  many real or catch-all inboxes remains an abuse path even though repeated team creation and
+  `+tag` / Gmail-dot aliases no longer earn credit. **Entirely configuration**: the classifier
   (`_is_blocked_email` in `domain/identity/access.py`, pure — it only answers) reads
   `TREG_BLOCKED_EMAIL_DOMAINS` and nothing else, parsed once per distinct value in `config.py`
   (trim, drop a leading `@`/`.`, lowercase, and drop any dotless entry so a typed `com` cannot
