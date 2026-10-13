@@ -226,10 +226,15 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   claim: trusting it let a script send a fresh address per request and skip every per-IP limit.
   The address is `TREG_CLIENT_IP_HEADER` when set and a valid IP (behind Cloudflare
   `cf-connecting-ip`, which Cloudflare refuses from clients; a request without it logs
-  `event=client_ip_header_missing` at most once a minute per process and falls back), else the
+  `event=client_ip_header_missing` at most once a minute per process and falls back; a request with
+  no `X-Forwarded-For` never crossed a proxy, such as a health check or an in-process relay, and
+  stays silent), else the
   `X-Forwarded-For` entry `TREG_TRUSTED_PROXY_HOPS` from the right (default 1, the one the nearest
-  proxy appended; 0 for direct clients), else the socket peer. The MCP relay forwards only the
-  resolved address (`client_ip.forwarding_headers`). Each process logs `event=client_ip_sources`
+  proxy appended; 0 for direct clients), else the socket peer. MCP tools call the API in process:
+  `mcp._bearer`, which every tool calls first, records the caller's resolved address in a
+  task-scoped variable, and `mcp._api` forwards it on every internal request
+  (`client_ip.forwarding_headers`), so MCP callers keep their own per-IP buckets instead of sharing
+  the transport's loopback peer. Each process logs `event=client_ip_sources`
   once with which address headers arrived and how many `X-Forwarded-For` entries, never values.
 - **Bot check on email sign-in.** Cloudflare Turnstile guards `start_email_login`, the only door that
   mints an inbox proof from a bare HTTP call (GitHub and Google already sit behind their own

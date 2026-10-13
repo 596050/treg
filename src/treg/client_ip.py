@@ -66,7 +66,10 @@ def from_headers(headers: Mapping[str, str], peer: str | None) -> str:
         trusted = _ip(lower.get(name))
         if trusted:
             return trusted
-        _note_missing(name)
+        if "x-forwarded-for" in lower:
+            # Proxied yet unmarked: the edge did not set it. A request with no X-Forwarded-For
+            # never crossed a proxy (a health check, an in-process relay), so silence there.
+            _note_missing(name)
     hops = s.trusted_proxy_hops
     if hops > 0:
         chain = [part.strip() for part in (lower.get("x-forwarded-for") or "").split(",") if part.strip()]

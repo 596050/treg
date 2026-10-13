@@ -41,6 +41,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 from typing import Annotated, Any, TypedDict
 from urllib.parse import parse_qsl, urlsplit
@@ -472,13 +473,22 @@ class MyToolsOut(TypedDict, total=False):
     hint: str | None
 
 
+# The caller's address for the tool call running in this task, resolved from the inbound MCP
+# request by `_bearer` and forwarded by `_api` on every in-process call. Without it each internal
+# request would come from the ASGI transport's loopback peer, and every MCP caller would share one
+# per-IP bucket. Task-scoped, so concurrent tool calls never see each other's address.
+_caller_ip: ContextVar[str] = ContextVar("treg_mcp_caller_ip", default="")
+
+
 def _bearer(ctx: Context) -> str:
-    """The caller's token, straight from the request headers.
+    """The caller's token, straight from the request headers. Every tool starts here, so it also
+    records the caller's address (`_caller_ip`) for the internal calls that follow.
 
     Returns "" when absent — every authenticated tool then fails closed with an instruction rather
     than a stack trace, because a missing token is the single most likely first-run problem.
     """
     headers = ctx.headers or {}
+    _caller_ip.set(client_ip.from_headers(headers, None) if headers else "")
     raw = headers.get("authorization") or headers.get("Authorization") or ""
     return raw.removeprefix("Bearer ").removeprefix("bearer ").strip()
 
@@ -640,7 +650,8 @@ async def _api(token: str, *, client_name: str = "mcp"):
         timeout=_TIMEOUT,
         # X-Treg-Client is attribution, not auth: without it every MCP-originated call lands
         # in the audit trail as client="", indistinguishable from unreported CLI traffic.
-        headers={**await _internal_auth(token), "X-Treg-Client": client_name},
+        headers={**await _internal_auth(token), "X-Treg-Client": client_name,
+                 **client_ip.forwarding_headers(_caller_ip.get())},
     ) as client:
         yield client
 
@@ -1132,17 +1143,11 @@ async def _catalog_request_impl(
     """Relays to POST /tool-requests so the rate limiting, field caps and attribution live in one
     place; the bearer (when the session has one) turns into who-asked on the stored row."""
     token = _bearer(ctx)
-    # The in-process relay would otherwise collapse every MCP caller into one client IP ("?"),
-    # making the per-IP rate limit a single global bucket. Resolve the caller's address under the
-    # same trusted-source rules as any request (client_ip.py) and forward only that, never the
-    # client-written X-Forwarded-For.
-    forwarded = client_ip.forwarding_headers(client_ip.from_headers(ctx.headers or {}, None))
     api_context = (_api(token) if surface is _TEAM_SURFACE
                    else _api(token, client_name=surface.client_name))
     async with api_context as client:
         r = await client.post("/tool-requests", json={
-            "capability": capability, "note": note, "source": surface.event_source},
-            headers=forwarded)
+            "capability": capability, "note": note, "source": surface.event_source})
     return _body(r)
 
 
@@ -1388,8 +1393,8 @@ async def _call_impl(endpoint_id: str, params: dict | list | None = None,
             return problem
         if slug:
             extra_headers["X-Treg-Org"] = slug
-        # Relay the caller tags off the MCP transport, the same way catalog_request forwards
-        # X-Forwarded-For. A builder proxying MCP sets this header once per session on their own HTTP
+        # Relay the caller tags off the MCP transport, the same way `_api` forwards the caller's
+        # address. A builder proxying MCP sets this header once per session on their own HTTP
         # client; the model never sees it, so it cannot be forgotten or invented.
         inbound_meta = (ctx.headers or {}).get("x-treg-meta") or (ctx.headers or {}).get("X-Treg-Meta")
         if inbound_meta:
