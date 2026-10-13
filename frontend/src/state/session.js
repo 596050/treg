@@ -24,10 +24,12 @@ _stashNext(){  // OAuth callbacks land on /app, losing a /app/skills/<x> deep li
 githubLogin(){ this._stashNext(); location.href='/auth/github'; },
 googleLogin(){ this._stashNext(); location.href='/auth/google'; },
 openSignin(){ this.demo.signin=true; },
-async emailStart(){ const e=(this.emailInput||'').trim(); if(!e){ this.loginErr='Enter your email address.'; return; } this.busy=true; this.loginErr='';
-      try{ const r=await this.api('/auth/email/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:e})});
+async emailStart(){ if(this.busy) return; const e=(this.emailInput||'').trim(); if(!e){ this.loginErr='Enter your email address.'; return; } this.busy=true; this.loginErr='';
+      const captcha_token=window.tregCaptcha ? await window.tregCaptcha.token('email_start') : '';  // /captcha.js
+      try{ const r=await this.api('/auth/email/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:e,captcha_token})});
         this.emailStage=true; this.devCode=r.dev_code||''; this.codeInput=''; }
-      catch(err){ this.loginErr='Could not send a code - try again.'; } finally{ this.busy=false; } },
+      catch(err){ this.loginErr = err.status===400 && err.detail ? err.detail : 'Could not send a code - try again.'; }
+      finally{ this.busy=false; } },
 async emailVerify(){ const code=(this.codeInput||'').trim(); if(!code) return; this.busy=true; this.loginErr='';
       try{ await this.api('/auth/email/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:this.emailInput.trim(),code})});
         location.reload(); }  // verify sets the session cookie → reload lands in session mode (like GitHub)

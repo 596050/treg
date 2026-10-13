@@ -3832,6 +3832,25 @@ async def adtrack_js():
     return FileResponse(f, media_type="application/javascript", headers=headers)
 
 
+@app.get("/captcha.js", include_in_schema=False)
+async def captcha_js(request: Request):
+    """`window.tregCaptcha` for every email sign-in form, with this deployment's public Turnstile
+    site key filled in. Without both Turnstile keys the key is empty and every token is ''."""
+    f = _WEB_DIR / "captcha.js"
+    if not f.exists():
+        raise HTTPException(status_code=404, detail="captcha.js not bundled")
+    s = get_settings()
+    key = s.turnstile_site_key if s.turnstile_secret else ""
+    body = f.read_text().replace('"__TREG_TURNSTILE_SITE_KEY__"', json.dumps(key), 1)
+    # no-cache: a bare include with no version query, and the key changes with configuration; the
+    # ETag turns every page view's revalidation into a 304.
+    etag = '"' + hashlib.sha256(body.encode()).hexdigest()[:16] + '"'
+    headers = {"Cache-Control": "no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/javascript", headers=headers)
+
+
 @app.get("/gtag.js", include_in_schema=False)
 async def gtag_js():
     """Google Ads conversion tracking via gtag.js. Loads the base tag (AW-18392771132) on every

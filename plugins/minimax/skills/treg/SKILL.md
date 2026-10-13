@@ -57,7 +57,7 @@ an email or grant credit; use email OTP or Google/GitHub sign-in. Existing balan
 ```bash
 curl -fsSL https://treg.to/install.sh | sh     # installs the CLI + points it here
 treg login                            # browser sign-in (GitHub / Google / email code) — first login registers you
-treg login --email you@company.com    # terminal-only alternative (emailed 6-digit code)
+treg login --email you@company.com    # emailed 6-digit code (falls back to the browser if the server requires a browser check)
 treg login --token <per-org-token>    # non-interactive (agents/CI)
 ```
 Everything runs in your **active org** (after first login, create or join a team). Team invites arrive by

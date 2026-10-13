@@ -570,7 +570,7 @@ team, so nothing else is needed. `TREG_TOKEN=<TOKEN> …| sh` works too.
 Three human sign-in doors (email is the identity; the door just proves it):
 
 - **GitHub OAuth** - `treg login` (opens a browser).
-- **Email one-time code** - `treg login --email you@company.com` (a 6-digit code is emailed).
+- **Email one-time code** - `treg login --email you@company.com` (a 6-digit code is emailed; a server that requires a browser check finishes in the browser).
 - **Invite code** - `treg org join <code> --email you@company.com` (creates you + joins a team).
 
 Agents/CI use a token directly: `treg login --token <token>`. A dashboard "API key" bakes in the

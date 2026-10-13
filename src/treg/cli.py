@@ -443,6 +443,11 @@ def cmd_config(args, cfg) -> None:
                       "active_org": cfg.get("active_org"), "logged_in": bool(cfg.get("token"))}, indent=2))
 
 
+def _wants_browser_check(r) -> bool:
+    """The email-code start was refused for want of a browser check (the server's Turnstile)."""
+    return r.status_code == 400 and r.headers.get("X-Treg-Captcha") == "required"
+
+
 def cmd_login(args, cfg) -> None:
     if args.token:  # agent / CI: a token directly (a per-org token, or a dashboard identity token)
         # A typed human Default/bootstrap is still an identity credential and may participate in
@@ -477,25 +482,30 @@ def cmd_login(args, cfg) -> None:
         base = cfg["base_url"].rstrip("/")
         h = {"ngrok-skip-browser-warning": "1", "X-Treg-Key-Protocol": "1"}
         r = httpx.post(f"{base}/auth/email/start", json={"email": args.email}, headers=h, timeout=15)
-        if r.status_code >= 400:
+        if _wants_browser_check(r):
+            # A terminal cannot pass the server's browser check (Turnstile), so this sign-in
+            # finishes through the browser handshake below instead.
+            print("This server only emails sign-in codes to a browser. Continuing in the browser…")
+        elif r.status_code >= 400:
             _show(r)
             return
-        d = r.json()
-        print(f"(dev) your code is: {d['dev_code']}" if d.get("dev_code")
-              else f"We sent a 6-digit code to {args.email}.")
-        code = input("Enter code: ").strip()
-        r = httpx.post(f"{base}/auth/email/verify", json={"email": args.email, "code": code}, headers=h, timeout=15)
-        if r.status_code >= 400:
-            _show(r)
+        else:
+            d = r.json()
+            print(f"(dev) your code is: {d['dev_code']}" if d.get("dev_code")
+                  else f"We sent a 6-digit code to {args.email}.")
+            code = input("Enter code: ").strip()
+            r = httpx.post(f"{base}/auth/email/verify", json={"email": args.email, "code": code}, headers=h, timeout=15)
+            if r.status_code >= 400:
+                _show(r)
+                return
+            d = r.json()
+            cfg.update(token=d["token"], email=d["email"], identity=True)
+            _save_config(cfg)  # persist the freshly-minted token BEFORE the optional org lookup
+            _pick_active_org(cfg, pin=False)
+            _pin_token_to_active_org(cfg, session_cookies=r.cookies)
+            print(f"✓ Logged in as {cfg['email']}. Active org: {cfg.get('active_org')}")
+            _maybe_offer_onboarding(cfg)
             return
-        d = r.json()
-        cfg.update(token=d["token"], email=d["email"], identity=True)
-        _save_config(cfg)  # persist the freshly-minted token BEFORE the optional org lookup
-        _pick_active_org(cfg, pin=False)
-        _pin_token_to_active_org(cfg, session_cookies=r.cookies)
-        print(f"✓ Logged in as {cfg['email']}. Active org: {cfg.get('active_org')}")
-        _maybe_offer_onboarding(cfg)
-        return
     # Browser handshake (register-or-login) — the /login page reuses an existing dashboard
     # session with one click, else offers every configured door (GitHub / Google / email code).
     import secrets as _secrets
