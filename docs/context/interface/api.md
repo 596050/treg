@@ -59,6 +59,7 @@ sources:
   - src/treg/email.py
   - src/treg/runner.py
   - src/treg/ratestore.py
+  - tests/test_cli_pairing.py
 related:
   - interface/cli.md
   - architecture/proxy-model.md
@@ -292,14 +293,28 @@ consumption, user provisioning, and invite-token consumption. They return framew
 semantic errors; the HTTP boundary maps them to responses and sets browser cookies. Every identity door
 reuses the same first-proof provisioning command.
 
-The CLI pairing state machine prunes before creating a pending entry, pops a completed result exactly
-once, and preserves session lookup, attempt decrement, pending pop, and result publication order. Its
-team-selection sessions are read-only. The three short-lived dictionaries are process-local and shared
-by every pairing door.
+The CLI pairing state machine uses the existing database `Ephemeral` table across workers and Web
+instances. `start_cli_login` sweeps expired pairing/OAuth entries and stores an encrypted code with
+`CLI_APPROVE_MAX_TRIES` attempts. `approve_cli_login` resolves the session, locks the pairing row with
+a no-op update (PostgreSQL and SQLite), checks expiry/code and selected membership, then commits the
+encrypted result and any Default-key creation together. Wrong attempts commit their decrement without
+extending expiry; the final miss deletes the row. A rejected membership or cancelled transaction leaves
+the pending handshake usable. `poll_cli_login` uses `DELETE RETURNING` and returns credentials only
+after commit. Pending, completed and OAuth-return state each have `HANDSHAKE_TTL` validity; expiry is
+checked on use, including after an approval's key lookup. Team-listing sessions remain read-only.
+
+Store failures return a generic, non-cacheable 503 with no local fallback or SQL/credential logging.
+Cancellation before commit rolls back; a lost response/acknowledgement after committed consumption can
+lose delivery, so the user must start a new login. Consumption is at-most-once, not guaranteed delivery.
+All workers need the same database and configured encryption/session secrets. A rolling upgrade or
+rollback involving the old process-local implementation can interrupt in-flight pairings; retry after
+all workers run the same version. No migration or Redis configuration is required.
 
 Social login builds each authorization request, exchanges the provider code, validates the proven
-email, provisions the user, and commits before publishing a CLI result. Provider callback state is
-validated before resolving the shared HTTP client. `/auth/logout` remains an HTTP-only cookie action.
+email and provisions the user. `_remember_cli_state` and `_consume_cli_state` share the expiring,
+one-time return mapping; the callback sets a browser session and returns CLI users to the team picker,
+where the pairing code is still required. Provider callback state is validated before resolving the
+shared HTTP client. `/auth/logout` remains an HTTP-only cookie action.
 
 ## Endpoints
 
@@ -531,7 +546,7 @@ validated before resolving the shared HTTP client. `/auth/logout` remains an HTT
   session, same-origin CSRF check, matching code and membership in the chosen team.
   Wrong attempts are bounded. `GET /auth/cli/poll` consumes the selected membership's Default key
   and org exactly once. When no team was selected, it returns only a seven-day bootstrap credential.
-  Pairing dictionaries remain process-local.
+  Pairing state and the social-login return mapping are shared through `Ephemeral`.
 
   `GET /auth/me` accepts token or session authentication and returns identity/onboarding state.
   `GET /auth/cli-token` uses `application.auth.issue_cli_token` to return a human membership's

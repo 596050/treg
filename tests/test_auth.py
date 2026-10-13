@@ -183,6 +183,23 @@ async def test_bad_state_rejected(login):
     assert cb.status_code == 400
 
 
+async def test_cli_social_callback_returns_to_picker_without_issuing_token(login):
+    provider, client = login
+    started = (await client.post("/auth/cli/start")).json()
+    await client.get(f"/auth/{provider}", params={"cli": started["login_id"]})
+    state = client.cookies.get("treg_oauth_state")
+    callback = await client.get(f"/auth/{provider}/callback", params={"code": "abc", "state": state})
+    assert callback.status_code == 302
+    assert callback.headers["location"] == f"/login?cli={started['login_id']}"
+    assert client.cookies.get(sess.COOKIE)
+    assert (await client.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json() == {
+        "status": "pending",
+    }
+    assert (await client.post("/auth/cli/approve", json=started)).status_code == 200
+    result = (await client.get("/auth/cli/poll", params={"login_id": started["login_id"]})).json()
+    assert sess.read_identity_claims(result["token"])["scope"] == sess.BOOTSTRAP_SCOPE
+
+
 async def test_no_session_no_token_is_401(gc):
     assert (await gc.get("/auth/me")).status_code == 401
     assert (await gc.get("/tools")).status_code == 401

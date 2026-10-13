@@ -636,16 +636,23 @@ def crypto_encrypt(v):
     return crypto.encrypt(v)
 
 
-def test_prune_handshakes_evicts_stale():
+async def test_prune_handshakes_evicts_stale(c):
     from datetime import timedelta
-    from treg.routers import auth as auth_routes
+    from treg.application import auth
+    from treg.models import Ephemeral
     from treg.timeutil import utcnow_naive
-    old = utcnow_naive() - timedelta(seconds=auth_routes.HANDSHAKE_TTL + 60)
-    auth_routes._cli_states["stale"] = ("lid", old)
-    auth_routes._cli_results["lidX"] = ({"token": "T"}, old)
-    auth_routes._cli_pending["lidP"] = ("CODE", 8, old)  # (pairing_code, attempts_left, created_at)
-    auth_routes._prune_handshakes()
-    assert "stale" not in auth_routes._cli_states and "lidX" not in auth_routes._cli_results and "lidP" not in auth_routes._cli_pending
+    old = utcnow_naive() - timedelta(seconds=60)
+    async with session_maker() as db:
+        for ns, key in ((auth.CLI_OAUTH_NS, "state"), (auth.CLI_LOGIN_NS, "result"),
+                        (auth.CLI_LOGIN_NS, "pending")):
+            db.add(Ephemeral(ns=ns, k=key, v={}, expires_at=old))
+        await db.commit()
+    assert (await c.post("/auth/cli/start")).status_code == 200
+    async with session_maker() as db:
+        rows = (await db.execute(select(Ephemeral).where(
+            Ephemeral.ns.in_((auth.CLI_LOGIN_NS, auth.CLI_OAUTH_NS)),
+        ))).scalars().all()
+        assert len(rows) == 1 and rows[0].expires_at > utcnow_naive()
 
 
 # ---- more invite / admin / health coverage ------------------------------------------------

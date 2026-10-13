@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import json
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hmac
@@ -12,7 +14,9 @@ import secrets as _secrets
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import func
+from cryptography.fernet import InvalidToken
+from sqlalchemy import delete, func, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -39,7 +43,7 @@ from ..domain.identity.mcp_oauth import (
     _refresh_is_live,
     _revoke_refresh_family,
 )
-from ..models import Invite, Membership, OAuthClient, OAuthCode, OAuthRefresh, Org, Tool, User
+from ..models import Ephemeral, Invite, Membership, OAuthClient, OAuthCode, OAuthRefresh, Org, Tool, User
 from ..timeutil import as_naive as _as_naive
 from ..timeutil import utcnow_naive as _utcnow_naive
 from . import signup
@@ -55,29 +59,20 @@ OTP_START_MAX_PER_IP = 30     # code requests from one IP per window (looser —
 AUTH_CODE_TTL_S = 300   # a code is redeemed within seconds; five minutes is generous, not a window
 
 
-# In-memory handshake state for `treg login` (single-instance; short-lived, fine to lose on restart).
-# Both carry a created-at so abandoned handshakes (unauthenticated, attacker-chosen keys) are swept
-# rather than accumulating forever — the results map holds live identity tokens, so it must not leak.
-_cli_states: dict[str, tuple[str, datetime]] = {}   # oauth state -> (login_id, created_at)
-_cli_results: dict[str, tuple[dict, datetime]] = {}  # login_id -> (result, created_at) — a completed login
-# login_id -> (pairing_code, attempts_left, created_at). Created by POST /auth/cli/start; the browser must
-# echo the code back at approve time (validated server-side) before a token is issued. This is the phishing
-# guard: a login the user didn't start has no matching code, and the poll endpoint carries no code to
-# brute-force. The code is shown ONLY in the terminal, never in the /login URL.
-_cli_pending: dict[str, tuple[str, int, datetime]] = {}
+# Shared auth state, including the social-login return path, lives in the existing Ephemeral table.
+# Keys hash the poll/state capabilities; codes and result credentials are encrypted at rest.
+CLI_LOGIN_NS = "cli_login"
+CLI_OAUTH_NS = "cli_oauth"
 HANDSHAKE_TTL = 600                  # seconds an abandoned login handshake lingers before eviction
 CLI_APPROVE_MAX_TRIES = 8           # wrong pairing-code attempts before a pending login is discarded
 _PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # unambiguous (no O/0/I/1); matches the CLI's charset
 
 
-def _prune_handshakes() -> None:
-    cutoff = _utcnow_naive() - timedelta(seconds=HANDSHAKE_TTL)
-    for k in [k for k, (_, t) in _cli_states.items() if t < cutoff]:
-        _cli_states.pop(k, None)
-    for k in [k for k, (_, t) in _cli_results.items() if t < cutoff]:
-        _cli_results.pop(k, None)
-    for k in [k for k, (_, _, t) in _cli_pending.items() if t < cutoff]:
-        _cli_pending.pop(k, None)
+async def _prune_handshakes(db: AsyncSession) -> None:
+    await db.execute(delete(Ephemeral).where(
+        Ephemeral.ns.in_((CLI_LOGIN_NS, CLI_OAUTH_NS)),
+        Ephemeral.expires_at <= _utcnow_naive(),
+    ).execution_options(synchronize_session=False))
 
 
 class EmailAuthError(Exception):
@@ -94,6 +89,20 @@ class CliPairingError(Exception):
     def __init__(self, kind: str):
         self.kind = kind
         super().__init__(kind)
+
+
+@asynccontextmanager
+async def _cli_store_session() -> AsyncIterator[AsyncSession]:
+    """Fail closed without logging SQL parameters, credentials or connection details.
+
+    Cancellation propagates and the session rolls back. A lost commit acknowledgement may have
+    consumed a result; never republish it or fall back to a process-local copy.
+    """
+    try:
+        async with database.session_maker() as db:
+            yield db
+    except (SQLAlchemyError, OSError, InvalidToken):
+        raise CliPairingError("unavailable") from None
 
 
 class SocialLoginError(Exception):
@@ -289,18 +298,35 @@ def _norm_pair_code(code: str | None) -> str:
 
 async def start_cli_login() -> dict:
     """Mint and retain the server side of a CLI pairing handshake."""
-    _prune_handshakes()
     login_id = _secrets.token_urlsafe(18)
     code = "".join(_secrets.choice(_PAIR_ALPHABET) for _ in range(4))
-    _cli_pending[login_id] = (code, CLI_APPROVE_MAX_TRIES, _utcnow_naive())
+    async with _cli_store_session() as db:
+        await _prune_handshakes(db)
+        db.add(Ephemeral(
+            ns=CLI_LOGIN_NS, k=crypto.hash_token(login_id),
+            v={"code": crypto.encrypt(code), "attempts": CLI_APPROVE_MAX_TRIES},
+            expires_at=_utcnow_naive() + timedelta(seconds=HANDSHAKE_TTL),
+        ))
+        await db.commit()
     return {"login_id": login_id, "code": code}
 
 
 async def poll_cli_login(login_id: str) -> dict:
     """Return a completed handshake exactly once, otherwise report it pending."""
-    _prune_handshakes()  # sweep abandoned results (they hold live tokens) so the map can't leak
-    entry = _cli_results.pop(login_id, None)
-    return entry[0] if entry is not None else {"status": "pending"}
+    async with _cli_store_session() as db:
+        # DELETE RETURNING arbitrates competing consumers in the database. A pending entry must
+        # survive polling, and no credential leaves this function before deletion is committed.
+        entry = (await db.execute(delete(Ephemeral).where(
+            Ephemeral.ns == CLI_LOGIN_NS, Ephemeral.k == crypto.hash_token(login_id),
+            (Ephemeral.v["result"].as_string().is_not(None))
+            | (Ephemeral.expires_at <= _utcnow_naive()),
+        ).returning(Ephemeral.v, Ephemeral.expires_at)
+          .execution_options(synchronize_session=False))).one_or_none()
+        result = {"status": "pending"}
+        if entry is not None and entry.expires_at > _utcnow_naive() and "result" in entry.v:
+            result = json.loads(crypto.decrypt(entry.v["result"]))
+        await db.commit()
+        return result
 
 
 async def _orgs_brief(user: User, db: AsyncSession) -> list[dict]:
@@ -338,24 +364,31 @@ async def cli_orgs(session_cookie: str) -> dict:
 async def approve_cli_login(
     session_cookie: str, login_id: str, code: str | None, requested_org: str | None,
 ) -> dict:
-    async with database.session_maker() as db:
+    async with _cli_store_session() as db:
         user = await _user_from_session(session_cookie, db)
         if user is None:
             raise CliPairingError("no_session")
         # The pairing code proves the approver is the same person who ran `treg login` (the code is
         # shown only in that terminal). Validate it after session resolution and before org lookup so
         # a phished login link cannot complete and the poll endpoint stays codeless.
-        pending = _cli_pending.get(login_id)
-        if pending is None:
+        # Like identity.lock_user: UPDATE serializes on PostgreSQL and SQLite (where FOR UPDATE
+        # is ignored). Keep the lock through attempts, org/key lookup and result publication.
+        pending = (await db.execute(update(Ephemeral).where(
+            Ephemeral.ns == CLI_LOGIN_NS, Ephemeral.k == crypto.hash_token(login_id),
+        ).values(k=Ephemeral.k).returning(Ephemeral)
+          .execution_options(synchronize_session=False))).scalar_one_or_none()
+        if pending is None or pending.expires_at <= _utcnow_naive() or "code" not in pending.v:
             raise CliPairingError("expired")
-        expected, tries_left, started_at = pending
+        expected = crypto.decrypt(pending.v["code"])
+        tries_left = pending.v["attempts"]
         typed = _norm_pair_code(code)
         if not typed or not hmac.compare_digest(expected.encode(), typed.encode()):
             if tries_left <= 1:  # discard first when the final permitted miss is consumed
-                _cli_pending.pop(login_id, None)
-                raise CliPairingError("too_many_wrong_codes")
-            _cli_pending[login_id] = (expected, tries_left - 1, started_at)
-            raise CliPairingError("wrong_code")
+                await db.delete(pending)
+            else:
+                pending.v = {**pending.v, "attempts": tries_left - 1}
+            await db.commit()  # the refusal must retain the globally consumed attempt
+            raise CliPairingError("too_many_wrong_codes" if tries_left <= 1 else "wrong_code")
         active_org: str | None = None
         default = None
         if requested_org:
@@ -368,8 +401,6 @@ async def approve_cli_login(
                 raise CliPairingError("not_member")
             active_org = org.slug
             default = await managed_keys.ensure_default_key(db, membership, user)
-            await db.commit()
-        _cli_pending.pop(login_id, None)  # code matched, so consume the pending login before publishing
         result = {"token": sess.make_identity(
             user.id, user.token_version, org=active_org,
             ttl=None if active_org else sess.BOOTSTRAP_TTL_SECONDS,
@@ -378,7 +409,13 @@ async def approve_cli_login(
         ), "email": user.email}
         if active_org:
             result["active_org"] = active_org
-        _cli_results[login_id] = (result, _utcnow_naive())
+        # An org/key lookup can outlast the handshake. Refuse without consuming or publishing it;
+        # rolling back also undoes any Default-key creation in this transaction.
+        if pending.expires_at <= _utcnow_naive():
+            raise CliPairingError("expired")
+        pending.v = {"result": crypto.encrypt(json.dumps(result))}
+        pending.expires_at = _utcnow_naive() + timedelta(seconds=HANDSHAKE_TTL)
+        await db.commit()
         return {"ok": True, "email": user.email, "active_org": active_org}
 
 
@@ -442,29 +479,50 @@ async def revoke_identity_tokens(user_id: int) -> RevokedIdentityTokens:
         )
 
 
-def start_github_login(cli: str, callback_base: Callable[[], str]) -> SocialLoginStart:
+async def _remember_cli_state(state: str, cli: str) -> None:
+    async with _cli_store_session() as db:
+        await _prune_handshakes(db)
+        db.add(Ephemeral(
+            ns=CLI_OAUTH_NS, k=crypto.hash_token(state), v={"login_id": crypto.encrypt(cli)},
+            expires_at=_utcnow_naive() + timedelta(seconds=HANDSHAKE_TTL),
+        ))
+        await db.commit()
+
+
+async def _consume_cli_state(state: str) -> tuple[str, datetime] | None:
+    async with _cli_store_session() as db:
+        entry = (await db.execute(delete(Ephemeral).where(
+            Ephemeral.ns == CLI_OAUTH_NS, Ephemeral.k == crypto.hash_token(state),
+        ).returning(Ephemeral.v, Ephemeral.expires_at)
+          .execution_options(synchronize_session=False))).one_or_none()
+        result = None
+        if entry is not None and entry.expires_at > _utcnow_naive():
+            result = (crypto.decrypt(entry.v["login_id"]), entry.expires_at)
+        await db.commit()
+        return result
+
+
+async def start_github_login(cli: str, callback_base: Callable[[], str]) -> SocialLoginStart:
     s = get_settings()
     if not s.github_client_id:
         raise SocialLoginError("github_not_configured")
     redirect = f"{callback_base()}/auth/github/callback"
     state = crypto.new_token()
     if cli:  # this is a `treg login` handshake, not a browser session
-        _prune_handshakes()  # evict abandoned handshakes so this map can't grow unbounded
-        _cli_states[state] = (cli, _utcnow_naive())
+        await _remember_cli_state(state, cli)
     url = (f"{s.github_authorize_url}?client_id={s.github_client_id}"
            f"&redirect_uri={quote(redirect, safe='')}&scope={quote('read:user user:email')}&state={state}")
     return SocialLoginStart(state=state, url=url)
 
 
-def start_google_login(cli: str, callback_base: Callable[[], str]) -> SocialLoginStart:
+async def start_google_login(cli: str, callback_base: Callable[[], str]) -> SocialLoginStart:
     s = get_settings()
     if not s.google_client_id:
         raise SocialLoginError("google_not_configured")
     redirect = f"{callback_base()}/auth/google/callback"
     state = crypto.new_token()
     if cli:  # a `treg login` handshake, not a browser session
-        _prune_handshakes()
-        _cli_states[state] = (cli, _utcnow_naive())
+        await _remember_cli_state(state, cli)
     url = (f"{s.google_authorize_url}?client_id={s.google_client_id}"
            f"&redirect_uri={quote(redirect, safe='')}&response_type=code"
            f"&scope={quote('openid email profile')}&state={state}&prompt=select_account")
@@ -490,7 +548,7 @@ async def _provision_social_user(email: str, state: str, door: str, entry_surfac
         if user.id in created:  # what the door knew, for the first-run lookup (onboard.first_run)
             await first_run.remember_hints(user.id, user.email, door=door, github_login=github_login, name=name)
         # Browser session OR `treg login` handshake — both go through the /login team picker now.
-        return SocialLoginProof(user=user, cli_state=_cli_states.pop(state, None))
+        return SocialLoginProof(user=user, cli_state=await _consume_cli_state(state))
 
 
 async def complete_github_login(
