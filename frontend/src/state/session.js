@@ -59,6 +59,7 @@ switchOrg(o){ this.parkCredentialIssue(); this.ticket('agentIssue'); this.ticket
 // Every await re-checks the ticket: a team switch starts a newer loadAll, and the previous team's
 // late answers are dropped instead of overwriting the new team's (see tickets.js).
 async loadAll(){ const live=this.ticket('all', false); this.err=''; this.loading=true;
+      const openedOn=this.view;  // a view opened mid-load already loaded itself for this team
       try{
         // /invites/mine needs no team, so it runs alongside /orgs; the bearer runs alongside the
         // team's data once the active team is known. The boot waits on one round trip per step.
@@ -88,12 +89,12 @@ async loadAll(){ const live=this.ticket('all', false); this.err=''; this.loading
         // isAdmin (super-admin) comes from /auth/me at boot - NOT a /admin/stats probe, which 403s on
         // every load/switch for the 99% of users who aren't super-admins (console-error noise + wasted request).
         this.loadBilling();  // fire-and-forget, self-guards on canAdmin — feeds the sidebar balance card on every load/switch
-        if(this.view==='orgs'){ this.loadOrgAdmin(); this.loadMyUsage(); }  // refresh team panel after a switch
+        if(this.view==='orgs' && openedOn==='orgs'){ this.loadOrgAdmin(); this.loadMyUsage(); }  // refresh team panel after a switch
         // Activity is one view with two tabs now, so a team switch has to refresh whichever is open
         // — both are org-scoped and would otherwise keep showing the previous team's numbers.
-        if(this.view==='activity'){ this.loadCalls(); if(this.actTab==='usage') this.loadUsage(); }
-        if(this.view==='secrets') this.loadSecrets();  // …and the Secrets view (was showing the previous org's)
-        if(this.view==='resources') this.loadTeamResources();
+        if(this.view==='activity' && openedOn==='activity'){ this.loadCalls(); if(this.actTab==='usage') this.loadUsage(); }
+        if(this.view==='secrets' && openedOn==='secrets') this.loadSecrets();  // …and the Secrets view (was showing the previous org's)
+        if(this.view==='resources' && openedOn==='resources') this.loadTeamResources();
       }catch(e){ if(live()) this.err='Failed to load: '+(e.detail||e.status); }
       finally{ if(live()) this.loading=false; } }
 }
