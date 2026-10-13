@@ -2,6 +2,7 @@
 title: Money — prepaid balance, the ledger, Stripe, and the reports that check it
 status: shipped
 sources:
+  - src/treg/policy.py
   - src/treg/catalog/tavily.yaml
   - src/treg/catalog/tinyfish.yaml
   - tests/test_tinyfish.py
@@ -132,6 +133,11 @@ invitation link. Legacy `/users` and admin-visible invite codes do not prove ema
 unverified account may create teams with zero signup credit; after verifying it may claim once on
 a subsequently created eligible team. Existing teams are not automatically backfilled. The grant
 amount is `promo_grant_micro` (default 1,000,000); zero skips the claim as well as the credit.
+
+Before claiming, `_grant_signup_promo` asks the `signup_credit` decision point
+([policy extensions](policy-extensions.md)) for a user who could claim. Without an installed
+extension it always grants. A `defer` (also the outcome of a slow or failing extension) skips the
+claim and writes nothing, so the user stays eligible for their next team.
 
 Revision `0033` defaults historical users and old writers to ineligible without scanning potentially
 deleted team ledgers. New application User rows explicitly start eligible. Verification never resets

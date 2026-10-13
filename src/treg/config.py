@@ -745,6 +745,10 @@ class Settings(BaseSettings):
     # use the socket peer). The first X-Forwarded-For entry is client-written and never trusted.
     client_ip_header: str = ""
     trusted_proxy_hops: int = Field(default=1, ge=0, le=5)
+    # Comma-separated `treg.extensions` entry-point names that must be installed (policy.py), so a
+    # deployment that relies on a private policy extension refuses to start without it. Empty =
+    # load whatever is installed, which for a plain install is nothing.
+    required_extensions: str = ""
     # Cloudflare Turnstile on the email sign-in form. Both keys empty = OFF, so self-hosted
     # instances load no widget and call no Cloudflare. The site key is public (sent to the
     # browser through /captcha.js); the secret only ever reaches siteverify. `observe` records each
