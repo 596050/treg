@@ -45,6 +45,14 @@ def test_the_edge_header_wins_and_is_validated(ip_config, caplog):
     assert caplog.text.count("event=client_ip_header_missing header=cf-connecting-ip") == 1
 
 
+def test_an_unproxied_request_is_not_a_missing_edge_header(ip_config, caplog):
+    """Health checks and in-process relays never cross the edge: no warning, the peer stands."""
+    ip_config(header="cf-connecting-ip")
+    with caplog.at_level(logging.WARNING, logger="treg"):
+        assert client_ip.from_headers({"Authorization": "Bearer x"}, "10.0.0.9") == "10.0.0.9"
+    assert "client_ip_header_missing" not in caplog.text
+
+
 def test_no_peer_and_no_headers_is_a_single_unknown_bucket(ip_config):
     ip_config()
     assert client_ip.from_headers({}, None) == "?"
@@ -83,3 +91,67 @@ def test_the_header_shape_is_reported_once_without_values(ip_config, caplog):
     lines = [r.getMessage() for r in caplog.records if "client_ip_sources" in r.getMessage()]
     assert lines == ["event=client_ip_sources headers=cf-connecting-ip forwarded_for_entries=2"]
     assert "198.51.100.7" not in caplog.text and "203.0.113.5" not in caplog.text
+
+
+@pytest.mark.parametrize("header", ["", "cf-connecting-ip"])
+async def test_every_mcp_internal_call_carries_the_callers_address(clients, ip_config, monkeypatch, header):
+    """MCP tools call treg's own API in process; each of those calls must resolve to the MCP
+    caller's address, not the transport's loopback peer shared by every MCP user."""
+    from test_mcp_directory import _call_tool, paired_mcp_session
+
+    ip_config(header=header)
+    seen = []
+    original = client_ip.of
+
+    def recording(request):
+        resolved = original(request)
+        if request.url.path != "/mcp/":
+            seen.append(resolved)
+        return resolved
+
+    monkeypatch.setattr(client_ip, "of", recording)
+    caller = {"CF-Connecting-IP": "203.0.113.9"} if header else {"X-Forwarded-For": "6.6.6.6, 203.0.113.9"}
+    async with paired_mcp_session() as session:
+        await _call_tool(session, "catalog_request", {"capability": "weather forecasts for farms"},
+                         clients.headers["X-Treg-Token"], caller, path="/mcp/")
+    assert seen, "the tool made no internal call"
+    assert set(seen) == {"203.0.113.9"}
+
+
+async def test_bearer_records_the_address_every_internal_call_forwards(ip_config):
+    """Every tool calls `_bearer(ctx)` first; `_api` then forwards that caller's address on every
+    in-process request, not just the one tool that used to forward it by hand."""
+    from types import SimpleNamespace
+
+    from treg import mcp
+
+    ip_config(header="cf-connecting-ip")
+    ctx = SimpleNamespace(headers={"authorization": "Bearer tok", "cf-connecting-ip": "203.0.113.9"})
+    token = mcp._bearer(ctx)
+    async with mcp._api(token) as client:
+        assert client.headers["cf-connecting-ip"] == "203.0.113.9"
+        assert client.headers["x-forwarded-for"] == "203.0.113.9"
+    mcp._bearer(SimpleNamespace(headers=None))  # stdio: no address to forward
+    async with mcp._api(token) as client:
+        assert "cf-connecting-ip" not in client.headers and "x-forwarded-for" not in client.headers
+
+
+async def test_concurrent_tool_calls_keep_their_own_address(ip_config):
+    import asyncio
+    from types import SimpleNamespace
+
+    from treg import mcp
+
+    ip_config(header="cf-connecting-ip")
+
+    async def tool(ip, gate):
+        token = mcp._bearer(SimpleNamespace(headers={"authorization": "Bearer t", "cf-connecting-ip": ip}))
+        await gate.wait()  # both calls have recorded an address before either forwards one
+        async with mcp._api(token) as client:
+            return client.headers["cf-connecting-ip"]
+
+    gate = asyncio.Event()
+    calls = [asyncio.create_task(tool(ip, gate)) for ip in ("203.0.113.1", "203.0.113.2")]
+    await asyncio.sleep(0)
+    gate.set()
+    assert await asyncio.gather(*calls) == ["203.0.113.1", "203.0.113.2"]

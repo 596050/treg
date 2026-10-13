@@ -195,9 +195,9 @@ for Codex, by User-Agent) are not offered `review` at all: `_OpenAIClientGate` d
 `tools/list` and the review sentence from the instructions, and call results carry no review or
 feedback invitation for them, because that review reads agent-initiated rating as analytics
 collection. Other clients keep both. `catalog_request` relays to
-`POST /tool-requests` so rate limiting and field caps live in one place, forwarding the caller's
-address as resolved by `client_ip.py` (never the client-written `X-Forwarded-For`); the
-in-process relay would otherwise collapse every MCP caller into one rate-limit bucket. `catalog_search`'s zero-result hint names it, so an agent that just searched
+`POST /tool-requests` so rate limiting and field caps live in one place. Like every in-process
+call, it carries the caller's address as `_bearer` resolved it (`client_ip.py`, never the
+client-written `X-Forwarded-For`); otherwise every MCP caller would share one rate-limit bucket. `catalog_search`'s zero-result hint names it, so an agent that just searched
 and found nothing can file the gap in the same session — and the miss itself is logged as a
 `SearchMiss` row (`audit.record_search_miss`, `source="mcp"` on the team MCP and
 `source="claude-connector"` on V2): this tool reads the catalog in-process, so the HTTP route's own
