@@ -692,6 +692,12 @@ class Settings(BaseSettings):
     # signs user_hash for identity verification and must never reach the browser.
     intercom_app_id: str = ""
     intercom_secret: str = ""
+    # Where the client address comes from (client_ip.py). A header only the edge can set wins
+    # (`cf-connecting-ip` behind Cloudflare); else the entry this many hops from the RIGHT of
+    # X-Forwarded-For, the one the nearest trusted proxy appended (0 = clients connect directly,
+    # use the socket peer). The first X-Forwarded-For entry is client-written and never trusted.
+    client_ip_header: str = ""
+    trusted_proxy_hops: int = Field(default=1, ge=0, le=5)
     # Cloudflare Turnstile on the email sign-in form. Both keys empty = OFF, so self-hosted
     # instances load no widget and call no Cloudflare. The site key is public (sent to the
     # browser through /captcha.js); the secret only ever reaches siteverify. `observe` records each

@@ -30,6 +30,8 @@ sources:
   - tests/test_token_revocation.py
   - src/treg/routers/auth.py
   - src/treg/infra/turnstile.py
+  - src/treg/client_ip.py
+  - tests/test_client_ip.py
   - src/treg/web/captcha.js
   - tests/test_turnstile.py
   - frontend/tests/captcha.test.ts
@@ -218,6 +220,17 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   `_normalize_project_access`) so an agent can be project-scoped at mint time — under the same
   sent-guard, so a rotate that omits it still preserves it. `Membership.created_by` (migration A23)
   stamps the minting admin, giving every agent an owner in the roster.
+- **Client address.** Every per-IP limit (email code requests, tool requests, public demo, find,
+  arena, onboarding sandbox, judge) keys on `client_ip.of(request)`, never on a header the client
+  wrote. `X-Forwarded-For` is a list each proxy appends to, so its first entry is the client's own
+  claim: trusting it let a script send a fresh address per request and skip every per-IP limit.
+  The address is `TREG_CLIENT_IP_HEADER` when set and a valid IP (behind Cloudflare
+  `cf-connecting-ip`, which Cloudflare refuses from clients; a request without it logs
+  `event=client_ip_header_missing` at most once a minute per process and falls back), else the
+  `X-Forwarded-For` entry `TREG_TRUSTED_PROXY_HOPS` from the right (default 1, the one the nearest
+  proxy appended; 0 for direct clients), else the socket peer. The MCP relay forwards only the
+  resolved address (`client_ip.forwarding_headers`). Each process logs `event=client_ip_sources`
+  once with which address headers arrived and how many `X-Forwarded-For` entries, never values.
 - **Bot check on email sign-in.** Cloudflare Turnstile guards `start_email_login`, the only door that
   mints an inbox proof from a bare HTTP call (GitHub and Google already sit behind their own
   checks). Off unless both `TREG_TURNSTILE_SITE_KEY` and `TREG_TURNSTILE_SECRET` are set, so
