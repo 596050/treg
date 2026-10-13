@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..application import table as table_app
 from ..domain.identity.access import Caller, require_member
 from ..infra.db import get_session
+from ..infra import org_traffic
 from .call import run_call_surface
 
 app = APIRouter()
@@ -77,6 +78,7 @@ async def table_tool(
     caller: Caller = Depends(table_caller),
 ):
     """One call, answered as `{shape, columns, rows, ...}` (docs/context/architecture/table.md)."""
+    org_traffic.identify(request.scope, caller.org_id)
     if not table_app.enabled_for(caller.org.slug, caller.email):
         # Answered here, not raised: a raised 404 on a call surface is stamped and audited as a
         # refusal, and with the flag off this route must look like it does not exist.

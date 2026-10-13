@@ -149,6 +149,10 @@ async def acquire(org_id: int) -> Slot | None:
         slot.renewal = asyncio.create_task(slot._renew())
         return slot
     if outcome == "busy":
+        try:
+            log.warning("org_concurrency rejected org_id=%s limit=%s status=429", org_id, limit)
+        except Exception:
+            pass  # Observability must not replace the original refusal.
         raise AdmissionRejected(unavailable=False, retry_after_s=settings.org_concurrency_retry_after_s)
     # Includes an acquire reply received after the confirmed lease's conservative deadline.
     await slot.finish()  # A lost reply may have acquired: clean only this unique token.

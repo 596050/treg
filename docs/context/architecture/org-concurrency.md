@@ -42,6 +42,10 @@ adds `X-Treg-Error`, `X-Treg-Call-Id` and an audit refusal. `mcp._call_impl` and
 refusal body also includes integer `retry_after_s`. Retry-After is guidance, not a promise of an
 available slot. There is no waiting queue or requests-per-minute quota.
 
+Contention emits `org_concurrency rejected org_id=<trusted Caller.org_id> limit=<effective limit>
+status=429`. Logging failure does not change the refusal. Process-local
+[Org traffic logs](org-traffic.md) include this request in their arrival/completion counters.
+
 ## Configuration and rollback
 
 All settings are environment variables, read at process startup. The defaults leave admission

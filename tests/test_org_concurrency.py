@@ -453,11 +453,14 @@ async def test_routing_children_take_no_extra_root_slots(clients, enrichment_on,
 
 async def test_funded_cancellation_keeps_cleanup_inside_slot(clients, platform_on, gate, monkeypatch):
     import httpx
+    from treg.infra import org_traffic
     from test_call_cancellation import (
         _BlockingProviderStream, _BlockingProviderTransport, _funded_org,
         _open_holds, _release_entries, _wait_for_gate,
     )
 
+    counter = org_traffic.Counters()
+    monkeypatch.setattr(org_traffic, "counters", counter)
     org, balance = await _funded_org(clients)
     _, store = await _configure_org(clients, gate)
     stream = _BlockingProviderStream()
@@ -479,6 +482,8 @@ async def test_funded_cancellation_keeps_cleanup_inside_slot(clients, platform_o
             [hold] = await _open_holds(org)
             task.cancel()
             await asyncio.wait_for(entered.wait(), 2)
+            assert counter.snapshot()["top"][0]["in_flight_max"] == 1
+            assert counter.orgs[org].live == 1
             await asyncio.sleep(0.3)
             assert store.count == 1 and store.renewed.is_set()
             proceed.set()
@@ -488,6 +493,9 @@ async def test_funded_cancellation_keeps_cleanup_inside_slot(clients, platform_o
             assert len(await _release_entries(org, hold.id)) == 1
             assert (await clients.get(f"/orgs/{org}/balance")).json()["balance_micro"] == balance
             assert store.count == 0
+            [traffic_row] = counter.snapshot()["top"]
+            assert traffic_row["requests"] == 0 and traffic_row["completed"] == 1
+            assert traffic_row["in_flight_max"] == 1 and not counter.orgs
         finally:
             proceed.set()
             task.cancel()
