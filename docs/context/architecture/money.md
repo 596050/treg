@@ -327,7 +327,8 @@ counted separately and are not a successful rollout. Owner-checked renewal and d
 or deleting a newer owner's lease. TTL and renewal cannot prove that an old database transaction
 has stopped, which is why database locks remain necessary.
 
-The shared Redis client's socket and connection timeout defaults are one second. Acquisition
+The shared Redis client's socket and connection timeout defaults are one second; optional
+counters and health probes keep a separate 200 ms outer deadline. Acquisition
 has a 1.5-second outer deadline; an unavailable result is not retried because SET may already
 have succeeded. The gate records its token before SET and cleans up unobserved acquisitions.
 The admission queue wait and lease TTL settings are independent of these command budgets.

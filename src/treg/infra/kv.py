@@ -2,8 +2,8 @@
 
 Render Key Value (Redis protocol) in production, an in-process dictionary when `TREG_KV_URL` is
 unset (local development, tests, self-hosters without one). The store holds nothing that must
-survive: every key expires, and every caller treats "unavailable" as a safe answer. Reads and
-writes are bounded by `_TIMEOUT_S` so a slow store can never hold a call open.
+survive: every key expires, and every caller treats "unavailable" as a safe answer. Socket I/O
+uses `_TIMEOUT_S`; optional counters and health probes have their own shorter outer deadline.
 
 Review-invitation budgets fail closed; money admission leases report unavailability explicitly
 so the caller can retain PostgreSQL's original correctness path. New tenants add narrow methods,
@@ -21,6 +21,8 @@ from typing import Literal, Protocol
 from ..config import get_settings
 
 _TIMEOUT_S = 1.0
+# Optional work must not make a response wait for money's longer socket timeout.
+_OPTIONAL_TIMEOUT_S = 0.2
 # Lease attempts outlast one socket timeout; retries share a fixed per-key budget.
 # Renewal also remains bounded by the earliest confirmed lease expiry.
 _LEASE_ATTEMPT_TIMEOUT_S = 1.5
@@ -125,7 +127,7 @@ class RedisStore:
 
     async def take(self, key: str, limit: int, ttl_s: int) -> bool:
         try:
-            async with asyncio.timeout(_TIMEOUT_S * 2):
+            async with asyncio.timeout(_OPTIONAL_TIMEOUT_S):
                 async with self._client.pipeline(transaction=True) as pipe:
                     pipe.incr(key)
                     pipe.expire(key, ttl_s, nx=True)  # the window starts at the first use
@@ -137,7 +139,7 @@ class RedisStore:
 
     async def ping(self) -> bool:
         try:
-            async with asyncio.timeout(_TIMEOUT_S * 2):
+            async with asyncio.timeout(_OPTIONAL_TIMEOUT_S):
                 return bool(await self._client.ping())
         except Exception as exc:  # noqa: BLE001
             _note_fault(exc)

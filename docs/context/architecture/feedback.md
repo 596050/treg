@@ -182,7 +182,9 @@ The store is `infra/kv.py`: Render Key Value (Redis protocol) at `TREG_KV_URL`, 
 in-process dictionary when unset; both answer through one `take(key, limit, ttl_s)` that is one
 atomic `INCR` + `EXPIRE NX`. The shared Redis client's socket and connection timeouts default to
 one second (`_TIMEOUT_S`); URL query options retain the driver's override behavior. Counter
-operations and health pings have a two-second outer deadline. Counters **fail closed**: a store
+operations and health pings keep an independent 200 ms outer deadline (`_OPTIONAL_TIMEOUT_S`).
+The router awaits sampled review-budget checks before returning the response, so these optional
+checks must not inherit the longer money lease budget. Counters **fail closed**: a store
 that cannot answer is a spent budget, so an outage silently withholds review invitations rather
 than flooding a team, and `hint_attached` events dropping to zero is the signal. `/admin/kv`
 (superadmin) reports `configured` and `reachable`; startup logs a warning when the configured
