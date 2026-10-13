@@ -29,6 +29,11 @@
     },
     {
       "args": [],
+      "class": "treg.infra.org_traffic.RequestLogMiddleware",
+      "kwargs": {}
+    },
+    {
+      "args": [],
       "class": "treg.api._BodyDecodeMiddleware",
       "kwargs": {}
     },
