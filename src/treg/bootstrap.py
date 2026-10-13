@@ -25,7 +25,7 @@ from . import adsconv, analytics, archive, audit
 from .application.call import route as routed_call
 from .application import arena, find_index
 from .application.onboard import first_run
-from . import bootstrap_handlers
+from . import bootstrap_handlers, policy
 from .bootstrap_http import (
     _BodyDecodeMiddleware,
     _DevTitleMiddleware,
@@ -823,4 +823,6 @@ def create_app(role: AppRole = "all", *, archive_object_store=None) -> FastAPI:
         "startup_checks": startup_checks,
     }
     app.state.archive_object_store = archive_object_store
+    # Last, so an extension's install sees the finished app. A missing required one refuses to start.
+    app.state.extensions = policy.load_extensions(app, get_settings().required_extensions)
     return app

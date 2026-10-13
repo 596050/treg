@@ -1,5 +1,5 @@
 """Identity eligibility for the one-time signup gift. Money is moved by the application."""
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,22 @@ def promo_inbox(email: str) -> str:
     return f"{local}@{domain}"
 
 
+def _eligible(user_id: int) -> tuple:
+    return (
+        User.id == user_id,
+        User.email_verified_at.is_not(None),
+        User.signup_promo_available.is_(True),
+        User.suspended.is_(False),
+        User.demo.is_(False),
+    )
+
+
+async def signup_promo_email(db: AsyncSession, user_id: int) -> str | None:
+    """The address of a user who could claim the gift right now, else None. Read-only: the claim
+    below stays the only guard, so a concurrent claim between the two is still refused there."""
+    return (await db.execute(select(User.email).where(*_eligible(user_id)))).scalar_one_or_none()
+
+
 async def claim_signup_promo(db: AsyncSession, user_id: int) -> bool:
     """Stage a single claim per user and per inbox, across all teams, processes and retries.
 
@@ -32,13 +48,7 @@ async def claim_signup_promo(db: AsyncSession, user_id: int) -> bool:
     alias loses its own eligibility too, so it never gets a second try.
     """
     result = await db.execute(
-        update(User).where(
-            User.id == user_id,
-            User.email_verified_at.is_not(None),
-            User.signup_promo_available.is_(True),
-            User.suspended.is_(False),
-            User.demo.is_(False),
-        ).values(signup_promo_available=False).returning(User.email)
+        update(User).where(*_eligible(user_id)).values(signup_promo_available=False).returning(User.email)
     )
     email = result.scalar_one_or_none()
     if email is None:

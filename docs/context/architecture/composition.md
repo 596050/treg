@@ -43,6 +43,8 @@ The `/agent-setup.js` browser asset (compiled from the Dashboard source for Aren
 `bootstrap.create_app(role)` is the FastAPI composition root. `api.py` hosts the ordered route table,
 attaches concern routers at compatibility-sensitive registration points, and calls the factory once at
 EOF so the deployed `treg.api:app` import path remains the default `all` role.
+Its last step loads installed policy extensions (`policy.load_extensions`, see
+[policy extensions](policy-extensions.md)), so an extension's `install` sees the finished app.
 
 The factory owns concrete assembly: the three core pure-ASGI middleware registrations, the optional
 V2 path normalizer, five exception handlers, static mounts, optional MCP mounts and lifespans,

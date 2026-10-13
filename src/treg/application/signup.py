@@ -8,13 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from .. import adsconv, analytics, health, sandbox as demo_sandbox
+from .. import adsconv, analytics, health, policy, sandbox as demo_sandbox
 from ..config import get_settings
 from ..domain import money as ledger
 from ..domain import referrals
 from ..domain.governance.teams import _make_org_membership, _slugify, reserved_reason
 from ..domain.identity.access import _email_domain, _is_blocked_email, _is_machine_email, _norm_email
-from ..domain.identity.promotions import claim_signup_promo
+from ..domain.identity.promotions import claim_signup_promo, promo_inbox, signup_promo_email
 from ..infra.db import session_maker
 from ..models import Org, User
 from ..timeutil import utcnow_naive as _utcnow_naive
@@ -127,7 +127,7 @@ async def _grant_signup_promo(db: AsyncSession, org: Org, *, user_id: int) -> No
     org_id = org.id
     amount = get_settings().promo_grant_micro
     try:
-        claimed = amount > 0 and await claim_signup_promo(db, user_id)
+        claimed = amount > 0 and await _policy_grants(db, org_id, user_id) and await claim_signup_promo(db, user_id)
         try:
             await adsconv.queue(db, org, adsconv.ACTION_SIGNUP)
         except Exception as exc:  # noqa: BLE001 - marketing cannot take away the signup benefit
@@ -139,6 +139,25 @@ async def _grant_signup_promo(db: AsyncSession, org: Org, *, user_id: int) -> No
     except Exception as exc:  # noqa: BLE001 - team creation already committed
         await db.rollback()
         logging.getLogger("treg").warning("promo grant failed for org %s: %s", org_id, exc)
+
+
+async def _policy_grants(db: AsyncSession, org_id: int, user_id: int) -> bool:
+    """Ask the `signup_credit` decision point, only for a user who could claim right now.
+
+    The read's transaction ends before the decision so no connection waits on the extension. A
+    deferral writes nothing: the user keeps eligibility and is asked again on their next team.
+    """
+    email = await signup_promo_email(db, user_id)
+    await db.commit()
+    if email is None:
+        return False
+    decision = await policy.registry.signup_credit(policy.SignupCreditContext(
+        user_id=user_id, org_id=org_id, email=email, canonical_inbox=promo_inbox(email),
+    ))
+    if decision is policy.CreditDecision.DEFER:
+        logging.getLogger("treg").info("event=signup_credit_deferred org=%s user=%s", org_id, user_id)
+        return False
+    return True
 
 
 def _ad_attribution_from(raw_cookie: str) -> tuple[str, str, str]:
