@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import crypto
+from .. import client_ip, crypto
 from ..application import auth as auth_use_cases
 from ..application import signup
 from ..application.onboard import first_run
@@ -152,11 +152,8 @@ async def _find_or_create_user(db: AsyncSession, email: str) -> User:
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP — first hop of X-Forwarded-For behind the reverse proxy (Render), else the socket peer."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "?"
+    """The client address every per-IP limiter keys on; the rules live in client_ip.py."""
+    return client_ip.of(request)
 
 
 _PAIR_ALPHABET = auth_use_cases._PAIR_ALPHABET

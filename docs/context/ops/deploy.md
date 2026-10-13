@@ -336,6 +336,13 @@ they go in `scripts/.dev-home/dev-keys.env`, which the server sources. The scrip
 (`TREG_EMAIL_DEV_MODE`, `TREG_CONNECT_DEMO_ENABLED`, `TREG_DATABASE_URL`) are appended last so they
 always win over anything passed through.
 
+Per-IP limits need a client address the client cannot write. Behind Cloudflare set
+`TREG_CLIENT_IP_HEADER=cf-connecting-ip`; behind other proxies set `TREG_TRUSTED_PROXY_HOPS` to the
+number of proxies that append to `X-Forwarded-For` (default 1; 0 when clients connect directly). Each
+process logs `event=client_ip_sources` once with the address headers its proxies deliver (names
+and counts only), and `event=client_ip_header_missing` when the configured header does not arrive.
+See [multi-tenancy](../architecture/multi-tenancy.md), "Client address".
+
 [`deploy/render.example.yaml`](../../../deploy/render.example.yaml) is a generic self-hosting example.
 It creates one web service and one PostgreSQL database, builds with
 `bash scripts/build-web.sh` (frontend build followed by the locked Python install), runs

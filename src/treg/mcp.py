@@ -53,7 +53,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import MCPError
 from mcp.types import AudioContent, CallToolResult, METHOD_NOT_FOUND, TextContent, ToolAnnotations
 
-from . import analytics, audit, hints, jsontext, oauth_providers
+from . import analytics, audit, client_ip, hints, jsontext, oauth_providers
 from .application import catalog_find as find_app
 from .application import catalog_search as search_app
 from .application import search_experiment
@@ -1133,15 +1133,16 @@ async def _catalog_request_impl(
     place; the bearer (when the session has one) turns into who-asked on the stored row."""
     token = _bearer(ctx)
     # The in-process relay would otherwise collapse every MCP caller into one client IP ("?"),
-    # making the per-IP rate limit a single global bucket — forward the edge's X-Forwarded-For
-    # so the API's limiter sees the real caller.
-    xff = (ctx.headers or {}).get("x-forwarded-for") or (ctx.headers or {}).get("X-Forwarded-For") or ""
+    # making the per-IP rate limit a single global bucket. Resolve the caller's address under the
+    # same trusted-source rules as any request (client_ip.py) and forward only that, never the
+    # client-written X-Forwarded-For.
+    forwarded = client_ip.forwarding_headers(client_ip.from_headers(ctx.headers or {}, None))
     api_context = (_api(token) if surface is _TEAM_SURFACE
                    else _api(token, client_name=surface.client_name))
     async with api_context as client:
         r = await client.post("/tool-requests", json={
             "capability": capability, "note": note, "source": surface.event_source},
-            headers={"X-Forwarded-For": xff} if xff else {})
+            headers=forwarded)
     return _body(r)
 
 
