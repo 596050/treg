@@ -29,6 +29,10 @@ sources:
   - tests/test_auth.py
   - tests/test_token_revocation.py
   - src/treg/routers/auth.py
+  - src/treg/infra/turnstile.py
+  - src/treg/web/captcha.js
+  - tests/test_turnstile.py
+  - frontend/tests/captcha.test.ts
   - src/treg/routers/orgs.py
   - src/treg/routers/resources.py
   - src/treg/domain/tools/bundles.py
@@ -73,7 +77,8 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   `require_member` / `require_identity`.
 - **`User`** - identity only: `id, email (unique), created_at`, plus `email_verified_at` and
   `signup_promo_available`. No token, no role. Verified accounts can claim signup credit once
-  across all teams; old accounts cannot claim again. See [money](money.md#signup-credit-eligibility).
+  across all teams and once per inbox (aliases share it); old accounts cannot claim again. See
+  [money](money.md#signup-credit-eligibility).
 - **`Membership`** — `user_id, org_id, role (owner|admin|member|viewer), token_hash (idx), webhook_url,
   daily_call_cap` (per-user daily usage cap; `-1` = unlimited, admin-set — see the API fragment's
   usage-metering section), **`tool_access`** (JSON; **NULL = ALL tools** — the default, so nobody is
@@ -165,9 +170,11 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   (which predates it and creates a `User` directly) and `auth_email_start` (refuse early, mint no code).
   `list_members` carries `is_agent` so one roster can show people and machines apart.
 - **Email-domain blocklist.** The same choke points, for throwaway mail and domains used for bulk
-  registration. New verified accounts can receive one promotional balance, so farming verified inboxes
-  remains an abuse path even though repeated team creation no longer earns credit. **Entirely configuration**: the classifier
-  (`_is_blocked_email` in `domain/identity/access.py`, pure — it only answers) reads
+  registration. New verified accounts can receive one promotional balance per inbox, so farming
+  many real or catch-all inboxes remains an abuse path even though repeated team creation and
+  `+tag` / Gmail-dot aliases no longer earn credit. **Entirely configuration**: the classifier
+  (`_is_blocked_email` in `domain/identity/access.py`, pure - it only answers; it walks the
+  `_norm_email` domain, whose trailing dots are dropped so `a@listed.example.` cannot pass) reads
   `TREG_BLOCKED_EMAIL_DOMAINS` and nothing else, parsed once per distinct value in `config.py`
   (trim, drop a leading `@`/`.`, lowercase, and drop any dotless entry so a typed `com` cannot
   refuse the world). Unset — the default — blocks nothing, and the next domain is a **dashboard
@@ -211,6 +218,55 @@ Team deletion removes evaluations before their runs through `ORG_SCOPED_MODELS`.
   `_normalize_project_access`) so an agent can be project-scoped at mint time — under the same
   sent-guard, so a rotate that omits it still preserves it. `Membership.created_by` (migration A23)
   stamps the minting admin, giving every agent an owner in the roster.
+- **Bot check on email sign-in.** Cloudflare Turnstile guards `start_email_login`, the only door that
+  mints an inbox proof from a bare HTTP call (GitHub and Google already sit behind their own
+  checks). Off unless both `TREG_TURNSTILE_SITE_KEY` and `TREG_TURNSTILE_SECRET` are set, so
+  self-hosters load no widget and call no Cloudflare. Every page with an email sign-in form, the
+  CLI's `/login` page included, loads `/captcha.js` (`routers/web.py` fills in the public site key)
+  and sends `captcha_token` from `tregCaptcha.token('email_start')`; a test fails if a page posting
+  to `/auth/email/start` does not. The script: a fresh single-use token per request (a double click
+  starts a second check rather than resending one); a check started when a field marked
+  `data-captcha="email_start"` gains focus, so the click rarely waits (invite and share email
+  fields never summon a widget); `interaction-only`, so the widget is invisible unless Cloudflare
+  wants a click, and then floats under the form being filled in (inside an open modal `<dialog>`,
+  in the dialog itself, since the top layer is above any z-index and the rest of the page is inert),
+  re-placed when it becomes visible and as the visual viewport moves; one check runs at a time, so
+  refocusing the field never floats a second widget; a submit waits at most 30s for an unanswered
+  check (10s for a script that has not loaded, then `!blocked`), but a check awaiting a click is
+  never torn down, so the next click finds its token; a stale check is removed before a new one
+  starts. When it cannot get a token it sends a
+  reason instead, `!blocked` (script blocked), `!pending` (still waiting for a click) or `!error`,
+  which the server never forwards to Cloudflare and only uses for the message and the log.
+  `infra/turnstile.py` only classifies: `pass` (siteverify success, action `email_start`, hostname
+  in `TREG_TURNSTILE_HOSTNAMES`, else the public host and its known aliases), `missing`, `invalid`
+  (failed, reused, expired, over 2048 characters, or solved for another action or host) and
+  `unavailable` (timeout, transport error, Cloudflare's `internal-error`, or our own secret
+  rejected, which also logs `event=turnstile_secret_rejected`: a wrong secret must not read as
+  every caller being a bot). It never raises.
+  The use case runs the per-email and per-IP rate window first and counts refused requests, so
+  junk tokens cannot drive unbounded siteverify calls, and commits before the check so no
+  connection waits on Cloudflare. Then `auth._check_browser` decides by `TREG_TURNSTILE_MODE`:
+  `observe` (default) logs `event=turnstile_email_start outcome=<outcome> reason=<reason>` and
+  changes nothing; `enforce` refuses `missing` and `invalid` with 400 (`captcha_blocked`,
+  `captcha_pending` or `captcha_failed`, by reason; no code, no mail) and lets `unavailable`
+  through. The outcome rides in the OTP's `Ephemeral` entry to verify: in enforce mode a non-`pass`
+  creates the new `User` with `signup_promo_available=false` (an existing user is never touched),
+  so a siteverify outage costs a new account its credit, not everyone their sign-in. An outage of
+  Cloudflare's script itself is not absorbed: every browser then sends `!blocked`, which enforce
+  refuses (the message points to Google and GitHub, which stay open). A
+  `TREG_FIXED_LOGIN_CODES` account skips the check (nothing is mailed; reviewers may script it).
+  `treg login --email` cannot pass a browser check: every captcha refusal carries
+  `X-Treg-Captcha: required`, on which the CLI says so and continues with the browser handshake;
+  a request from the CLI's email door gets a detail naming `treg login`, for released CLIs that
+  only print it.
+  Observe mode measures false refusals before enforcing: `event=turnstile_email_start` (outcome,
+  reason, `client=cli|browser`) pairs with `event=turnstile_email_verify` (outcome, `new_user`,
+  client) logged when a code is redeemed, so per outcome the redeemed share is the share of real
+  people enforce would refuse; `signup_completed` also carries the outcome as `captcha`. A real
+  solve our own rules reject logs `event=turnstile_mismatch` with Cloudflare's action and
+  hostname, and startup logs `event=turnstile_misconfigured` for a half-set key pair or a public
+  host missing from the hostnames, the two ways enforce could refuse everyone. A paid solving service still passes;
+  the check raises the cost of a bare script, not of a determined farm.
 - **Observed agents (`GET /orgs/{id}/agents/observed`, admin+).** The OTHER half of the agents story:
   the runtimes already calling under members' own tokens. The CLI fingerprints its host runtime
   (`CLAUDECODE` → `claude-code`, `CODEX_*`, `CURSOR_*`, …; `TREG_CLIENT` overrides) and sends

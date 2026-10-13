@@ -46,12 +46,14 @@ sources:
   - src/treg/domain/provider_resources.py
   - src/treg/routers/provider_resources.py
   - src/treg/alembic/versions/0033_signup_promo_eligibility.py
+  - src/treg/alembic/versions/0071_signup_promo_claim.py
   - src/treg/alembic/versions/0041_searchlog.py
   - src/treg/alembic/versions/0055_find_v2_log.py
   - src/treg/alembic/versions/0056_searchlog_verdict.py
   - src/treg/alembic/versions/0065_call_verdict.py
   - src/treg/alembic/versions/0066_endpointdaystat_verdicts.py
   - src/treg/alembic/versions/0070_api_key_spend_rollup.py
+  - src/treg/alembic/versions/0072_callrecord_call_ref_index.py
   - src/treg/timeutil.py
   - src/treg/infra/db.py
   - src/treg/infra/money_timing.py
@@ -152,6 +154,10 @@ with a retained database default of false for existing rows and old writers. New
 explicitly insert true. No balances or historical money entries change. Successful email proof sets
 verification; only the atomic identity claim consumes availability, committed with the signup grant.
 See [signup eligibility](money.md#signup-credit-eligibility).
+
+Revision `0071` adds `SignupPromoClaim` (`inbox` primary key, `user_id` with no FK, `created_at`):
+one row per mailbox that received the signup gift, staged with the user-level claim. It is
+backfilled from users already verified and no longer eligible.
 
 ## Registry tables
 
@@ -331,6 +337,23 @@ uses this metadata, never the encrypted token's shape.
   `recounted_on`). `application/key_spend_rollup.py`, run as `treg-worker spend rollup`, is the
   only writer of both, and the Team and Usage pages read only them; see [money](money.md) § Spend
   per API key. Team deletion clears a team's rows.
+
+  **`ix_callrecord_call_ref`, and why a database could lack it.** The model and revision 0001
+  declare it, so every database Alembic created has it. A database that predates Alembic got
+  `call_ref` from the old `init_db` `ALTER TABLE ... ADD COLUMN`, which adds no index, and was
+  then only stamped at the baseline, so it never ran 0001's `create_index`. There every
+  `call_ref` lookup read the whole audit table: the spend rollup's key lookup
+  (`call_ref IN (...)`), `GET /calls/{call_ref}` and the async hit UPDATE in `audit.py`.
+  Revision 0072 builds it where it is missing: concurrently on Postgres, without the migration
+  statement timeout (a large table takes longer than 120 s), dropping and rebuilding an INVALID
+  index an interrupted build left behind, and leaving a valid one alone. Its downgrade is a no-op,
+  since 0001 owns the index. The general lesson: a stamped database has the baseline's tables,
+  not necessarily its indexes; check `pg_indexes` before relying on one.
+
+  The rollup's ledger walks state the watermark as an index bound, `created_at >= watermark AND
+  (created_at > watermark OR id > watermark_id)`, never as one OR: with the whole condition inside
+  the OR, Postgres bounds the `created_at` index scan only from above and walks it from its oldest
+  row on every batch.
 
   `refused_by` distinguishes a treg refusal (`auth`, `policy`, `balance`, `cap`, `resolution`,
   `request`, and other mechanism-specific values) from an upstream answer, where it is null.
@@ -649,7 +672,10 @@ events or org/call IDs in these aggregates.
 `infra.kv` by `phase` (`acquire`, `renew`, `release`) and one of seven `error_type` values:
 `deadline_exceeded` (Python timeout), `redis_timeout`, `authentication`, `permission`, `connection`,
 `response`, or `other`. At most 21 buckets retain counts, UTC first/last failure timestamps and
-`elapsed_max_ms`, plus the configured socket timeout and outer operation deadline in milliseconds.
+`elapsed_max_ms`, plus the socket timeout default (1,000 ms) and outer command-attempt deadline
+(1,500 ms). Renewal/release attempts also share a 2,500 ms per-key budget; remaining confirmed
+lease validity can further shorten renewal. URL query overrides can change the effective driver
+socket timeout without changing these reported defaults.
 Elapsed time is client-observed, including connection setup and event-loop scheduling, not Redis
 server execution time. A type narrows the failing boundary; it does not establish a network or
 server root cause by itself. Normal contention and task cancellation are not lease errors.

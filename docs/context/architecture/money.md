@@ -40,6 +40,7 @@ sources:
   - src/treg/application/signup.py
   - src/treg/domain/identity/promotions.py
   - src/treg/alembic/versions/0033_signup_promo_eligibility.py
+  - src/treg/alembic/versions/0071_signup_promo_claim.py
   - src/treg/routers/admin.py
   - src/treg/routers/billing.py
   - src/treg/routers/call.py
@@ -120,8 +121,9 @@ and owns the commit that lands it; neither adapter reaches into the ledger.
 
 `application.signup._grant_signup_promo` calls `identity.promotions.claim_signup_promo` for the
 creating user's ID. A conditional UPDATE consumes `User.signup_promo_available` only for a verified,
-active, non-demo user. It commits in the same transaction as `ledger.grant(once=False)`, the block,
-balance and entry; failed commits roll everything back. Ledger metadata records `source=signup`
+active, non-demo user, then inserts the user's inbox into `SignupPromoClaim`, whose primary key
+refuses a second claim for one mailbox. It commits in the same transaction as
+`ledger.grant(once=False)`, the block, balance and entry; failed commits roll everything back. Ledger metadata records `source=signup`
 and the claiming `user_id`. The ordinary per-org `grant(once=True)` check is not the concurrency
 arbiter and manual/referral grants retain their own semantics.
 
@@ -136,6 +138,16 @@ deleted team ledgers. New application User rows explicitly start eligible. Verif
 eligibility. Team deletion, leaving and ownership changes cannot restore it because it lives on the
 user. Administrative deletion of the user also deletes this marker; this is an account-level guarantee,
 not a permanent per-email denylist or proof that separate accounts belong to different humans.
+
+The inbox is `promotions.promo_inbox(email)`: lowercased, the domain's trailing dots dropped,
+`+tag` subaddressing dropped for every domain, and for `gmail.com` / `googlemail.com` the dots removed and the domain folded to
+`gmail.com`. Each alias is still its own login and `User`; only the gift is shared, and a user
+whose inbox was already claimed through another alias loses its own eligibility in the same
+UPDATE. The claim row has no FK and outlives the user, so account deletion does not free an inbox.
+This stops one mailbox from verifying many accounts; it does not stop someone holding many real
+mailboxes or a catch-all domain. Revision `0071` seeds the table from every user already verified
+and no longer eligible (a superset of real claimants) and is a rollback floor: dropping it would
+reopen a gift to every alias of an already-gifted inbox.
 Existing balances and all five money operations are unchanged. During rollout or application rollback,
 keep automatic credit disabled until every serving instance enforces the new rule; old code still
 awards per team even after this additive migration.
@@ -327,13 +339,21 @@ counted separately and are not a successful rollout. Owner-checked renewal and d
 or deleting a newer owner's lease. TTL and renewal cannot prove that an old database transaction
 has stopped, which is why database locks remain necessary.
 
+The shared Redis client's socket and connection timeout defaults are one second; optional
+counters and health probes keep a separate 200 ms outer deadline. Acquisition
+has a 1.5-second outer deadline; an unavailable result is not retried because SET may already
+have succeeded. The gate records its token before SET and cleans up unobserved acquisitions.
+The admission queue wait and lease TTL settings are independent of these command budgets.
+
 Renewal retries a transient timeout/connection failure once with the same owner-checked
 `PEXPIRE`: it cannot recreate an expired key or extend a successor's token. Each attempt has
-a 200 ms cooperative deadline within a shared 400 ms budget. The gate passes the earliest
+a 1.5-second cooperative deadline within a shared 2.5-second budget. The gate passes the earliest
 confirmed expiry of all held leases into `renew_lease`, which checks this absolute deadline
 before each EVAL and caps each attempt's timeout by the remaining budget. A late transient
 error or a timeout translated by driver cleanup cannot start another attempt after that deadline;
-these checks cannot preempt an already-running command or a scheduling pause.
+these checks cannot preempt an already-running command or a scheduling pause. A minimum
+three-second lease renewed at TTL/3 has at most two seconds of confirmed validity remaining,
+so that validity bound can shorten the retry rather than allowing the full command budget.
 Permanent errors, cancellation and confirmed ownership loss do not retry. The gate
 counts validity from each acquire/renew request's start, not its reply; after a scheduling pause
 it checks this deadline before renewing or entering the session. A renewal reply observed after
@@ -346,7 +366,7 @@ per scope alongside `lease_lost`, without increasing `kv_errors`. Actual command
 retain their diagnostic rows if the validity deadline also expires during failure cleanup.
 
 Lease cleanup retries a transient timeout/connection failure at most once, always with the same
-token-checked Lua delete. Each attempt keeps its 200 ms deadline within a shared 400 ms per-key
+token-checked Lua delete. Each attempt keeps its 1.5-second deadline within a shared 2.5-second per-key
 budget; authentication/permission errors and cancellation do not retry. These are asyncio time
 budgets, not hard wall-clock guarantees under scheduler stalls or cancellation cleanup. Multiple
 Org leases are cleaned up in reverse order, so a batch's cleanup budget scales with its keys.
@@ -708,7 +728,9 @@ day -> `spent_micro` and `charges`. `charges` counts settle entries with money, 
 routed call or an overflow hold settles more than once. The fold:
 
 - walks the ledger in `(created_at, id)` order from a persisted watermark (`ApiKeySpendCursor`;
-  ledger ids are random, so the id alone cannot be a cursor), over the `created_at` index;
+  ledger ids are random, so the id alone cannot be a cursor), over the `created_at` index, with the
+  watermark as the scan's lower bound (`created_at >= watermark AND (created_at > watermark OR
+  id > watermark_id)`), never inside one OR that the planner cannot bound;
 - leaves entries younger than a few minutes for the next run: the audit row that names the key is
   written after the settle, through a queue;
 - reads small batches, each in its own short transaction: lock the cursor row, read the entries,

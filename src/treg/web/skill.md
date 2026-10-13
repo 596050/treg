@@ -26,14 +26,15 @@ The mechanics:
   (SKILL.md) + its secrets + its tool(s). The proxy *relays, never models* the upstream.
 
 New verified accounts receive $1.00 of signup credit once, when creating an eligible team.
-Additional teams start with no signup credit. Legacy `POST /users` registration does not verify
+Additional teams start with no signup credit, and aliases of one inbox (`+tag`, Gmail dots) share
+a single credit. Legacy `POST /users` registration does not verify
 an email or grant credit; use email OTP or Google/GitHub sign-in. Existing balances remain usable.
 
 ## First: install + sign in
 ```bash
 curl -fsSL {BASE}/install.sh | sh     # installs the CLI + points it here
 treg login                            # browser sign-in (GitHub / Google / email code) — first login registers you
-treg login --email you@company.com    # terminal-only alternative (emailed 6-digit code)
+treg login --email you@company.com    # emailed 6-digit code (falls back to the browser if the server requires a browser check)
 treg login --token <per-org-token>    # non-interactive (agents/CI)
 ```
 Everything runs in your **active org** (after first login, create or join a team). Team invites arrive by

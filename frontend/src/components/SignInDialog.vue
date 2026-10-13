@@ -20,7 +20,7 @@ export default { components: { BrandMark }, setup: useDashboard }
       <button v-if="meta.github" class="btn primary" style="width:100%;padding:11px;margin-bottom:8px" @click="githubLogin">Continue with GitHub</button>
       <button v-if="meta.google" class="btn" style="width:100%;padding:11px;margin-bottom:8px" @click="googleLogin">Continue with Google</button>
       <div v-if="!emailStage">
-        <div class="field"><input v-model="emailInput" type="email" placeholder="you@work.com" @keyup.enter="emailStart"/></div>
+        <div class="field"><input v-model="emailInput" type="email" data-captcha="email_start" placeholder="you@work.com" @keyup.enter="emailStart"/></div>
         <button class="btn" style="width:100%" @click="emailStart" :disabled="busy">{{busy?'Sending…':'Email me a sign-in code'}}</button>
       </div>
       <div v-else>

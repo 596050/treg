@@ -24,10 +24,12 @@ _stashNext(){  // OAuth callbacks land on /app, losing a /app/skills/<x> deep li
 githubLogin(){ this._stashNext(); location.href='/auth/github'; },
 googleLogin(){ this._stashNext(); location.href='/auth/google'; },
 openSignin(){ this.demo.signin=true; },
-async emailStart(){ const e=(this.emailInput||'').trim(); if(!e){ this.loginErr='Enter your email address.'; return; } this.busy=true; this.loginErr='';
-      try{ const r=await this.api('/auth/email/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:e})});
+async emailStart(){ if(this.busy) return; const e=(this.emailInput||'').trim(); if(!e){ this.loginErr='Enter your email address.'; return; } this.busy=true; this.loginErr='';
+      const captcha_token=window.tregCaptcha ? await window.tregCaptcha.token('email_start') : '';  // /captcha.js
+      try{ const r=await this.api('/auth/email/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:e,captcha_token})});
         this.emailStage=true; this.devCode=r.dev_code||''; this.codeInput=''; }
-      catch(err){ this.loginErr='Could not send a code - try again.'; } finally{ this.busy=false; } },
+      catch(err){ this.loginErr = err.status===400 && err.detail ? err.detail : 'Could not send a code - try again.'; }
+      finally{ this.busy=false; } },
 async emailVerify(){ const code=(this.codeInput||'').trim(); if(!code) return; this.busy=true; this.loginErr='';
       try{ await this.api('/auth/email/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:this.emailInput.trim(),code})});
         location.reload(); }  // verify sets the session cookie → reload lands in session mode (like GitHub)
@@ -57,6 +59,7 @@ switchOrg(o){ this.parkCredentialIssue(); this.ticket('agentIssue'); this.ticket
 // Every await re-checks the ticket: a team switch starts a newer loadAll, and the previous team's
 // late answers are dropped instead of overwriting the new team's (see tickets.js).
 async loadAll(){ const live=this.ticket('all', false); this.err=''; this.loading=true;
+      const openedOn=this.view;  // a view opened mid-load already loaded itself for this team
       try{
         // /invites/mine needs no team, so it runs alongside /orgs; the bearer runs alongside the
         // team's data once the active team is known. The boot waits on one round trip per step.
@@ -86,12 +89,12 @@ async loadAll(){ const live=this.ticket('all', false); this.err=''; this.loading
         // isAdmin (super-admin) comes from /auth/me at boot - NOT a /admin/stats probe, which 403s on
         // every load/switch for the 99% of users who aren't super-admins (console-error noise + wasted request).
         this.loadBilling();  // fire-and-forget, self-guards on canAdmin — feeds the sidebar balance card on every load/switch
-        if(this.view==='orgs'){ this.loadOrgAdmin(); this.loadMyUsage(); }  // refresh team panel after a switch
+        if(this.view==='orgs' && openedOn==='orgs'){ this.loadOrgAdmin(); this.loadMyUsage(); }  // refresh team panel after a switch
         // Activity is one view with two tabs now, so a team switch has to refresh whichever is open
         // — both are org-scoped and would otherwise keep showing the previous team's numbers.
-        if(this.view==='activity'){ this.loadCalls(); if(this.actTab==='usage') this.loadUsage(); }
-        if(this.view==='secrets') this.loadSecrets();  // …and the Secrets view (was showing the previous org's)
-        if(this.view==='resources') this.loadTeamResources();
+        if(this.view==='activity' && openedOn==='activity'){ this.loadCalls(); if(this.actTab==='usage') this.loadUsage(); }
+        if(this.view==='secrets' && openedOn==='secrets') this.loadSecrets();  // …and the Secrets view (was showing the previous org's)
+        if(this.view==='resources' && openedOn==='resources') this.loadTeamResources();
       }catch(e){ if(live()) this.err='Failed to load: '+(e.detail||e.status); }
       finally{ if(live()) this.loading=false; } }
 }

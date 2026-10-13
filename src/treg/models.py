@@ -179,6 +179,19 @@ class User(SQLModel, table=True):
     created_at: NaiveUTC = Field(default_factory=_now)
 
 
+class SignupPromoClaim(SQLModel, table=True):
+    """The signup gift, claimed once per inbox (`promotions.promo_inbox`), not per address.
+
+    The primary key arbitrates aliases racing for one mailbox; the row is staged with the
+    user-level claim and the grant, so a failed grant leaves no row. `user_id` has no FK and
+    the row outlives the user, so deleting an account never frees its inbox for another gift.
+    """
+
+    inbox: str = Field(primary_key=True)
+    user_id: int
+    created_at: NaiveUTC = Field(default_factory=_now)
+
+
 class Membership(SQLModel, table=True):
     """Links a User to an Org with a role, and carries that pairing's token.
     The caller presents a token; we store only its SHA-256 hash. Access = "are you a member

@@ -327,6 +327,7 @@
     .xcols { overflow-y: auto; } .xcols .dup { display: none !important; }
   }
 </style>
+<script src="/captcha.js" defer></script>
 </head>
 <body>
 
@@ -526,7 +527,7 @@
     <a class="pill" href="/auth/google" style="text-decoration:none">Continue with Google</a>
     <div class="div">or email a code</div>
     <div id="em-step1">
-      <input id="em-input" type="email" placeholder="you@work.com"/>
+      <input id="em-input" type="email" data-captcha="email_start" placeholder="you@work.com"/>
       <button class="pill" id="em-btn1">Email me a sign-in code</button>
     </div>
     <div id="em-step2" style="display:none">
@@ -724,8 +725,8 @@ function host(u) { return u.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
   function emailStart() {
     var em = input.value.trim();
     if (!em) { err.textContent = 'Enter your email address.'; return; }
-    btn1.textContent = 'Sending…'; err.textContent = '';
-    fetch('/auth/email/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: em }) })
+    if (btn1.disabled) return; btn1.disabled = true; btn1.textContent = 'Sending…'; err.textContent = '';
+    (window.tregCaptcha ? tregCaptcha.token('email_start') : Promise.resolve('')).then(function (t) { return fetch('/auth/email/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: em, captcha_token: t }) }); })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (d) {
           if (!r.ok) throw new Error(d.detail || 'could not send the code');
@@ -739,7 +740,7 @@ function host(u) { return u.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
         else { err.style.color = ''; }
         code.focus();
       })
-      .catch(function (e2) { err.textContent = e2.message; btn1.textContent = 'Email me a sign-in code'; });
+      .catch(function (e2) { err.textContent = e2.message; btn1.disabled = false; btn1.textContent = 'Email me a sign-in code'; });
   }
   function emailVerify() {
     if (!code.value.trim()) return;

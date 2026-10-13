@@ -51,6 +51,7 @@ email_router = app
 
 class EmailStartIn(BaseModel):
     email: str
+    captcha_token: str = ""  # Turnstile widget token; only read when the deployment enables it
 
 
 class EmailVerifyIn(BaseModel):
@@ -65,14 +66,40 @@ _EMAIL_HTTP_ERRORS = {
     # what is on it.
     "blocked_domain": (403, "this address cannot be used to sign in"),
     "rate_limited": (429, "too many code requests — please wait a few minutes"),
+    "captcha_failed": (400, "We couldn't verify this browser. Refresh the page and try again, "
+                            "or continue with Google or GitHub."),
+    "captcha_blocked": (400, "Your browser blocked the security check from challenges.cloudflare.com. "
+                             "Allow it and try again, or continue with Google or GitHub."),
+    "captcha_pending": (400, "Tick the security check below the form, then send the code again."),
     "invalid_code": (401, "invalid code"),
     "suspended": (403, "account suspended"),
 }
 
 
-def _email_http_error(exc: auth_use_cases.EmailAuthError) -> HTTPException:
+# Marks a refusal for want of a browser check, so a client (the CLI's `login --email`) can react
+# to it without matching the English detail.
+CAPTCHA_HEADER = "X-Treg-Captcha"
+
+
+# A terminal cannot pass a browser check. Released CLIs print `detail` and stop, so tell them the
+# command that works; newer ones read the header and continue in the browser on their own.
+_CLI_CAPTCHA_DETAIL = ("Email codes need a browser check on this server. "
+                       "Run `treg login` without --email to sign in through the browser.")
+
+
+def _email_http_error(exc: auth_use_cases.EmailAuthError, client: str = "browser") -> HTTPException:
     status_code, detail = _EMAIL_HTTP_ERRORS[exc.kind]
-    return HTTPException(status_code=status_code, detail=detail)
+    headers = None
+    if exc.kind.startswith("captcha_"):
+        headers = {CAPTCHA_HEADER: "required"}
+        if client == "cli":
+            detail = _CLI_CAPTCHA_DETAIL
+    return HTTPException(status_code=status_code, detail=detail, headers=headers)
+
+
+def _client(request: Request) -> str:
+    """`cli` for the terminal's email door (`treg login --email`), else `browser`; for the logs."""
+    return "cli" if request.headers.get("X-Treg-Key-Protocol") == "1" else "browser"
 
 
 @app.post("/auth/email/start")
@@ -85,9 +112,10 @@ async def auth_email_start(
     brute-force counter at will. All this state is in the DB (survives restart, correct multi-instance)."""
     require_managed_cli(request)
     try:
-        return await auth_use_cases.start_email_login(body.email, _client_ip(request))
+        return await auth_use_cases.start_email_login(
+            body.email, _client_ip(request), captcha_token=body.captcha_token, client=_client(request))
     except auth_use_cases.EmailAuthError as exc:
-        raise _email_http_error(exc) from exc
+        raise _email_http_error(exc, _client(request)) from exc
 
 
 @app.post("/auth/email/verify")
@@ -100,7 +128,7 @@ async def auth_email_verify(
     require_managed_cli(request)
     try:
         verified = await auth_use_cases.verify_email_login(body.email, body.code,
-            entry_surface=request.cookies.get("treg_entry_surface", ""))
+            entry_surface=request.cookies.get("treg_entry_surface", ""), client=_client(request))
     except auth_use_cases.EmailAuthError as exc:
         raise _email_http_error(exc) from exc
     resp = JSONResponse({"token": verified.token, "email": verified.email})
@@ -477,7 +505,7 @@ def _login_page_html(login_id: str, *, session_email: str | None, github: bool, 
         doors.append(f'<a class="btn" href="/auth/google?cli={login_id}">Sign in with Google</a>')
     doors.append(
         '<div id="email-door">'
-        '<div id="email-row"><input id="em" type="email" placeholder="you@company.com" autocomplete="email">'
+        '<div id="email-row"><input id="em" type="email" data-captcha="email_start" placeholder="you@company.com" autocomplete="email">'
         '<button class="btn" onclick="sendCode()">Email me a code</button></div>'
         '<div id="code-row" style="display:none"><input id="code" inputmode="numeric" placeholder="6-digit code">'
         '<button class="btn primary" onclick="verifyCode()">Verify</button></div>'
@@ -492,6 +520,7 @@ def _login_page_html(login_id: str, *, session_email: str | None, github: bool, 
         f'<p>to connect the <b>treg</b> CLI to your account</p>'
         f'<div class="stack">{"".join(parts)}</div><div class="err" id="err"></div>'
         f"</div></div>"
+        f'<script src="/captcha.js" defer></script>'
         f"<script>const HAS_SESSION={has_session};{_LOGIN_JS.replace('__LOGIN_ID__', login_id)}</script></body></html>"
     )
 
@@ -592,10 +621,12 @@ async function loadOrgs(){const box=document.getElementById('orgpick');if(!box)r
   box.appendChild(b)});
  if(orgs.length===1){box.firstChild.classList.add('primary')}}
 async function sendCode(){err('');const em=document.getElementById('em').value.trim();if(!em)return err('enter your email');
- try{const d=await post('/auth/email/start',{email:em});
+ const b=document.querySelector('#email-row button');if(b.disabled)return;b.disabled=true;
+ try{const t=window.tregCaptcha?await window.tregCaptcha.token('email_start'):'';  // /captcha.js
+  const d=await post('/auth/email/start',{email:em,captcha_token:t});
   document.getElementById('code-row').style.display='';
   document.getElementById('hint').textContent=d.dev_code?('dev code: '+d.dev_code):('code sent to '+d.email);
- }catch(e){err(e.message)}}
+ }catch(e){err(e.message)}finally{b.disabled=false}}
 async function verifyCode(){err('');const em=document.getElementById('em').value.trim(),co=document.getElementById('code').value.trim();
  if(!co)return err('enter the code');
  try{await post('/auth/email/verify',{email:em,code:co});

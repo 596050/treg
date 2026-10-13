@@ -535,6 +535,10 @@ shared HTTP client. `/auth/logout` remains an HTTP-only cookie action.
     in `TREG_FIXED_LOGIN_CODES` (an account with no inbox, such as a directory reviewer's demo
     account) is issued its configured code hash instead and nothing is sent; attempts, TTL and
     start limits are unchanged. Verification issues an identity token and session cookie.
+    Start accepts an optional `captcha_token` (Cloudflare Turnstile); when the deployment enables it
+    in enforce mode, a missing or invalid token is a 400 with `X-Treg-Captcha: required` and a
+    message naming the likely cause (blocked script, unticked check, or failed check) (see
+    [multi-tenancy](../architecture/multi-tenancy.md), "Bot check on email sign-in").
   - Invite sign-in: the admin-visible invite code is join-only. An independent inbox-only
     `email_token` authenticates through `/auth/invite-signin`, consumed once. Invalid/expired
     links return `/?invite_expired=1`. See [auth-secrets](../architecture/auth-secrets.md).

@@ -236,8 +236,10 @@ Bare **`treg connections`** now lists (the subparser is `required=False` with a 
   code**; the poll result may carry `active_org` = the team picked in the browser, which `cmd_login` adopts
   directly, falling back to `_pick_active_org` only against an older server (where `/start` 404s → a
   locally-minted `login_id`, no code)),
-  `login --email you@x.com` (terminal-only email OTP: `POST /auth/email/start` →
-  prompts for the 6-digit code → `/auth/email/verify`, storing the identity token), or `login --token <t>`
+  `login --email you@x.com` (email OTP from the terminal: `POST /auth/email/start` →
+  prompts for the 6-digit code → `/auth/email/verify`, storing the identity token; a server that
+  requires a browser check answers 400 with `X-Treg-Captcha: required`, and the CLI says so and
+  continues with the browser handshake instead), or `login --token <t>`
   for agents/CI — which now **verifies the token via `/auth/me` before saving** (a rejected token exits
   loudly instead of the old misleading "Token saved"; a valid token whose user has no team yet prints a
   "create a team first" hint rather than a silent `Active org: None`). First login by

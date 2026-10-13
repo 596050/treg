@@ -692,6 +692,18 @@ class Settings(BaseSettings):
     # signs user_hash for identity verification and must never reach the browser.
     intercom_app_id: str = ""
     intercom_secret: str = ""
+    # Cloudflare Turnstile on the email sign-in form. Both keys empty = OFF, so self-hosted
+    # instances load no widget and call no Cloudflare. The site key is public (sent to the
+    # browser through /captcha.js); the secret only ever reaches siteverify. `observe` records each
+    # outcome and changes nothing; `enforce` refuses a code to a missing or invalid token and
+    # withholds signup credit from a new account when Cloudflare could not answer.
+    turnstile_site_key: str = ""
+    turnstile_secret: str = ""
+    # Comma-separated frontend hostnames a token must have been solved on. Empty = the host of
+    # public_url. List every host the dashboard is served from (aliases included), never localhost
+    # in production.
+    turnstile_hostnames: str = ""
+    turnstile_mode: Literal["observe", "enforce"] = "observe"
     # Registry OAuth apps for the non-Google providers (oauth_providers.py). Empty = that provider
     # is listed as unconfigured rather than failing part-way through a consent.
     # treg's own Google Ads developer token, from OUR approved manager account. Ads needs it on

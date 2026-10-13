@@ -144,8 +144,9 @@ agents then built against a constitution that was wrong.
   approved it stays under review for good, unlisted or not, and its share
   page shows a run log of outcomes only unless the maker turns `public_log` off
   (`docs/hub-listing-decisions.md`). See `docs/context/architecture/hub.md`.
-- **Signup credit.** Once per new verified user, enforced by a user-level atomic claim committed
-  with the grant. Team deletion never restores eligibility; legacy registration is not email proof.
+- **Signup credit.** Once per new verified user and once per inbox (Gmail dots and `+tag` aliases
+  share one), enforced by a user-level atomic claim plus a `SignupPromoClaim` row committed with
+  the grant. Team deletion never restores eligibility; legacy registration is not email proof.
 - **Money.** Everything is **integer micro-USD** - never floats, never cents. The Stripe SDK lives
   only in `infra/stripe.py`, orchestration in `application/billing.py`, and `reconcile.py` is
   read-only. See `docs/context/architecture/money.md`.
