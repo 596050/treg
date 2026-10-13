@@ -146,6 +146,25 @@ async def test_redis_outage_policy_is_not_over_limit(gate, policy, caplog):
     assert policy in caplog.text
 
 
+@pytest.mark.parametrize("policy", ["fail_open", "fail_closed"])
+async def test_redis_client_creation_failure_honors_policy(gate, monkeypatch, policy, caplog):
+    settings, _ = gate
+    settings.org_concurrency_redis_failure = policy
+
+    def broken_client():
+        raise ValueError("invalid Redis URL option: must-not-log-url")
+
+    monkeypatch.setattr(kv, "store", broken_client)
+    if policy == "fail_open":
+        assert await guard.acquire(1) is None
+    else:
+        with pytest.raises(guard.AdmissionRejected) as caught:
+            await guard.acquire(1)
+        assert caught.value.status_code == 503
+    assert policy in caplog.text
+    assert "must-not-log-url" not in caplog.text
+
+
 @pytest.mark.parametrize("outcome", ["lost", "unavailable"])
 async def test_renewal_loss_keeps_accepted_cleanup_running(gate, caplog, outcome):
     _, store = gate

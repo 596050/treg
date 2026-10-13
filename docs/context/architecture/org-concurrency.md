@@ -27,6 +27,14 @@ protect the identity lookup from saturation. This is a root-request bound, not a
 fanout or database connections. It applies to configured orgs' own-key calls as well as shared-key
 calls without changing their billing behavior.
 
+**Excluded entry points:** direct `POST /hub/run` and `/orgs/{org_id}/provider-resources` requests
+do not enter `run_call_surface`; both can perform provider work outside this guard. The MCP
+`resources_list` tool uses the provider-resources route and is also excluded. Arena/background
+work invoking `execute_call` directly is outside the guarded roots. This setting therefore does
+not cap every Org Web request or all provider work. A hub invocation through `/call/` is covered
+by its one root slot, while a direct `/hub/run` invocation is not. Expanding these boundaries is
+a separate change.
+
 `org_concurrency.acquire` returns immediately on contention with HTTP 429,
 `Retry-After`, and `detail.error=org_concurrency_limit`. Existing HTTP exception handling still
 adds `X-Treg-Error`, `X-Treg-Call-Id` and an audit refusal. `mcp._call_impl` and
@@ -62,6 +70,8 @@ no process-local concurrency fallback. Operators must choose one policy before e
   `detail.error=org_concurrency_unavailable` and retry guidance when admission cannot be confirmed.
 - `fail_open`: those requests proceed without a confirmed slot during Redis failure, sacrificing
   the concurrency cap for availability. This is never selected by default.
+
+The same explicit policy covers Redis client initialization failures as well as command failures.
 
 Rollback sets `TREG_ORG_CONCURRENCY_ENABLED=false` and applies the normal deployment process.
 Already admitted requests finish their existing renewal/cleanup lifecycle. No key deletion or DB

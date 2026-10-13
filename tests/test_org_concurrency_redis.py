@@ -8,6 +8,8 @@ from uuid import uuid4
 import pytest
 
 from treg.infra import kv
+from treg.infra import org_concurrency as guard
+from treg.config import get_settings
 
 
 @pytest.fixture
@@ -78,6 +80,28 @@ async def test_renewal_outlives_original_lease_and_shorter_owner_does_not_shorte
     assert await second.release_slot(key, "short") == "released"
     assert await second.release_slot(key, "short") == "not_owned"
     assert await first.acquire_slot(key, "third", 1000, 2) == "acquired"
+
+
+async def test_guard_heartbeat_retains_slot_past_original_lease(stores, monkeypatch):
+    first, second, _ = stores
+    org_id = uuid4().int
+    settings = get_settings()
+    monkeypatch.setattr(settings, "org_concurrency_enabled", True)
+    monkeypatch.setattr(settings, "org_concurrency_limits", {org_id: 1})
+    monkeypatch.setattr(settings, "org_concurrency_redis_failure", "fail_closed")
+    monkeypatch.setattr(settings, "org_concurrency_lease_s", 0.6)
+    monkeypatch.setattr(kv, "store", lambda: first)
+    slot = await guard.acquire(org_id)
+    try:
+        await asyncio.sleep(1.3)
+        assert await second.acquire_slot(slot.key, "other-worker", 2000, 1) == "busy"
+        assert await first._client.zscore(slot.key, slot.token) is not None
+        assert slot.renewal is not None and not slot.renewal.done()
+        await slot.finish()
+        assert await second.acquire_slot(slot.key, "other-worker", 2000, 1) == "acquired"
+    finally:
+        await slot.finish()
+        await first._client.delete(slot.key)
 
 
 async def test_redis_outage_and_local_store_are_distinct_from_contention():

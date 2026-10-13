@@ -115,13 +115,24 @@ class Slot:
         await _join_cleanup(self._finish_task)
 
 
+def _unavailable(settings) -> None:
+    log.warning("org_concurrency acquire_unavailable policy=%s", settings.org_concurrency_redis_failure)
+    if settings.org_concurrency_redis_failure != "fail_open":
+        raise AdmissionRejected(unavailable=True, retry_after_s=settings.org_concurrency_retry_after_s)
+
+
 async def acquire(org_id: int) -> Slot | None:
     settings = get_settings()
     limit = settings.org_concurrency_limits.get(org_id)
     if (not settings.org_concurrency_enabled or limit is None
             or org_id in settings.org_concurrency_exempt_org_ids):
         return None
-    slot = Slot(kv.store(), org_id, settings.org_concurrency_lease_s)
+    try:
+        store = kv.store()
+    except Exception:
+        # URL options/client initialization can fail before a command exists to return unavailable.
+        return _unavailable(settings)
+    slot = Slot(store, org_id, settings.org_concurrency_lease_s)
     attempt = asyncio.create_task(slot.store.acquire_slot(slot.key, slot.token, slot.ttl_ms, limit))
     try:
         # Cancelling the caller must not race a Redis write and leave its owner unaccounted for.
@@ -141,7 +152,4 @@ async def acquire(org_id: int) -> Slot | None:
         raise AdmissionRejected(unavailable=False, retry_after_s=settings.org_concurrency_retry_after_s)
     # Includes an acquire reply received after the confirmed lease's conservative deadline.
     await slot.finish()  # A lost reply may have acquired: clean only this unique token.
-    log.warning("org_concurrency acquire_unavailable policy=%s", settings.org_concurrency_redis_failure)
-    if settings.org_concurrency_redis_failure == "fail_open":
-        return None
-    raise AdmissionRejected(unavailable=True, retry_after_s=settings.org_concurrency_retry_after_s)
+    return _unavailable(settings)
