@@ -475,8 +475,8 @@ uses this metadata, never the encrypted token's shape.
   transition and Default-key creation; result and OAuth-state consumption use `DELETE RETURNING`.
   Pending, completed and OAuth entries each expire after `HANDSHAKE_TTL`; reads enforce expiry.
   `_prune_handshakes` runs on CLI start in a separate transaction, deleting at most 100 expired
-  rows from `cli_login` and `cli_oauth`. PostgreSQL skips locked rows; unrelated namespaces and
-  live rows are untouched. Further batches run on later starts, so expiry is immediate but
+  rows from `cli_login` and `cli_oauth`. PostgreSQL materializes the candidate batch and skips
+  locked rows; unrelated namespaces and live rows are untouched. Further batches run on later starts, so expiry is immediate but
   physical removal may lag idle periods or a backlog. No schema migration is needed.
 
 - **`DenyRule`** - org policy over what may be CALLED: `org_id`, nullable `user_id` (NULL = the whole

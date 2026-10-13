@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, ConnectError
-from sqlalchemy import event, select, update
+from sqlalchemy import event, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -413,7 +413,20 @@ async def test_pending_and_unknown_polls_are_read_only(workers):
         event.remove(engine, "commit", commit)
 
 
-async def test_cleanup_is_bounded_and_leaves_live_rows_and_other_namespaces(workers):
+@pytest.mark.parametrize("nested_loop", [False, True])
+async def test_cleanup_is_bounded_and_leaves_live_rows_and_other_namespaces(workers, monkeypatch, nested_loop):
+    if nested_loop:
+        if workers.engines[0].dialect.name != "postgresql":
+            pytest.skip("PostgreSQL query planner")
+        class NestedLoopSession(AsyncSession):
+            async def __aenter__(self):
+                await super().__aenter__()
+                await self.execute(text("SET LOCAL enable_hashjoin = off"))
+                await self.execute(text("SET LOCAL enable_mergejoin = off"))
+                return self
+        monkeypatch.setattr(workers.modules[0].database, "session_maker", async_sessionmaker(
+            workers.engines[0], class_=NestedLoopSession, expire_on_commit=False,
+        ))
     old = utcnow_naive() - timedelta(seconds=100)
     async with database.session_maker() as db:
         for i in range(130):

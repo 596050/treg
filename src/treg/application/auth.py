@@ -78,9 +78,12 @@ async def _prune_handshakes() -> None:
             Ephemeral.ns.in_((CLI_LOGIN_NS, CLI_OAUTH_NS)),
             Ephemeral.expires_at <= _utcnow_naive(),
         ).order_by(Ephemeral.expires_at).limit(CLI_GC_BATCH_SIZE)
-                   .with_for_update(skip_locked=True))
+                   .with_for_update(skip_locked=True).cte("expired_cli_handshakes")
+                   .prefix_with("MATERIALIZED", dialect="postgresql"))
+        # Fix the candidate set once: a nested-loop DELETE may otherwise re-evaluate a limited
+        # SKIP LOCKED subquery after each deletion and exceed the batch size.
         await db.execute(delete(Ephemeral).where(
-            tuple_(Ephemeral.ns, Ephemeral.k).in_(expired),
+            tuple_(Ephemeral.ns, Ephemeral.k).in_(select(expired.c.ns, expired.c.k)),
             Ephemeral.expires_at <= _utcnow_naive(),
         ).execution_options(synchronize_session=False))
         await db.commit()
