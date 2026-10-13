@@ -36,6 +36,8 @@ _TABLE: list[tuple[str, int, str, str]] = [
     ("companyenrich", 402, r"payment required", "balance"),
     ("akta", 402, r"insufficient credits", "balance"),
     ("lusha", 400, r"reached your credit limit", "balance"),
+    # Misses share the 400 status; only this error code means an empty account.
+    ("prospeo", 400, r'"error_code"\s*:\s*"insufficient_credits"', "balance"),
     ("predictleads", 402, r"exceeded the monthly request limit", "quota"),
     # PDL meters operations separately: person_identify can run out while enrich still works.
     ("pdl", 402, r"hit your account maximum for", "quota"),

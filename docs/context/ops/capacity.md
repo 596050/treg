@@ -303,8 +303,8 @@ use the shared-key limiter.
 selects the shared collector. The collector reads its key setting independently of the serving
 allow-list so disabling a provider does not hide its last balance check. A focused live
 reconciliation matched one paid one-credit call beside two free calls without exposing the key.
-The Starter allowance was not exhausted, so its provider-specific exhaustion response remains in
-the acknowledged-unrecorded set and no overflow route is claimed.
+An empty account answers `400` with `error_code: INSUFFICIENT_CREDITS`, a `balance` signature. No
+overflow route is claimed.
 
 ## Wiza prepaid API credits
 
