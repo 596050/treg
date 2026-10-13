@@ -279,10 +279,13 @@ contracts:
     summary: "Google organic results for a keyword — provider-native result rows in `results`; `limit` is the depth"
     identity:
       - {q: str}
+      - {q: str, ai_overview: bool}   # ai_overview true: only providers that return Google's AI Overview whenever Google shows one
     filters:
       country: {type: str, default: us, note: "ISO country code; mapped to each provider's location code / gl / region"}
       language: {type: str, default: en}
       limit: {type: int, default: 10, note: "results to return where the provider bills by depth"}
+    # A provider that never returns the AI Overview answers a different question for a caller who needs it.
+    scoping: [ai_overview]
     output:
       results: {type: list, required: true, note: "the provider's own organic result rows (title, link/url, snippet…) — shapes differ per provider"}
       count: {type: int}
