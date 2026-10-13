@@ -256,14 +256,36 @@ and rollout settings. No database migration or additional database privileges ar
 
 - `TREG_MONEY_ADMISSION_ORG_IDS` is a JSON array of positive Org IDs. A non-empty array enables
   admission only for those orgs; `[]` covers all orgs when the feature is enabled.
-- `TREG_MONEY_ADMISSION_WAIT_S` defaults to 5 seconds and bounds the complete local/Redis
-  acquisition attempt. Cleanup is separately bounded by the KV operations. Exhausting this
+- `TREG_MONEY_ADMISSION_WAIT_S` accepts values greater than 0 through 120 seconds, defaults to
+  5 seconds, and bounds the complete local/Redis acquisition attempt. Local-lock waiting uses
+  the same budget as Redis waiting. Cleanup is separately bounded by the KV operations. Exhausting this
   budget falls back to the existing database path; it does not reject or discard settlement.
   `reserve` and `release` use that same wait and key-value fallback. A missing or non-positive
   org on those operations refuses before checkout, and that refusal is not an HTTP 429.
 - `TREG_MONEY_ADMISSION_LEASE_S` defaults to 15 seconds. The owner renews while acquiring or using
   its leases and deletes only leases with its token. Expiry, lost renewal or a Redis outage can
   admit overlapping database transactions, so existing database locks remain authoritative.
+  The lease starts on acquisition and renews at TTL/3; it need not exceed the pre-acquisition wait.
+
+Allowing a 90–120 second admission wait does not guarantee an end-to-end request can wait that
+long. It changes no default or running configuration. Budget for earlier request stages, every
+admission scope (reserve and settle can each wait), upstream work, database execution, retries,
+and cancellation/lease cleanup. Longer queues retain more pending requests and can increase
+latency or client retries without increasing a hot org's transaction throughput.
+
+Before opting into a longer wait, review these independent limits:
+
+| Boundary | Existing behavior and compatibility |
+|---|---|
+| Redis commands and renewal | `infra.kv` keeps 1-second socket timeouts, 1.5-second lease attempts, and a 2.5-second per-key renewal/release retry budget. Renewal is also bounded by the earliest confirmed lease expiry. Optional counters/health probes retain their dedicated 200 ms deadline. None scales with the queue wait. |
+| Plain call / upstream | `bootstrap._lifespan` configures `call_timeout_s` (default 180 seconds) on the upstream HTTP client. This is an HTTP I/O timeout, not a total request deadline or a budget for admission plus execution. |
+| Hold age | `domain.money.hold_ttl_s` remains `call_timeout_s + hold_grace_s` (defaults: 180 + 60 = 240 seconds). Pre-reserve admission precedes hold creation, but later admission consumes hold age. A slow upstream plus 90–120 seconds of settlement waiting can exceed the stale-hold cutoff and race a reaper; pending async-task holds are excluded. Review hold lifetime before enabling longer waits. |
+| CLI / local proxy | `cli._client` has a 190-second read timeout; `localproxy.treg_client` defaults to 120 seconds. A full 120-second queue leaves no local-proxy execution headroom; even the CLI can time out across reserve, upstream, and settlement waits. |
+| MCP | `mcp._api` declares a 120-second HTTPX timeout, but its in-process `ASGITransport` does not enforce a network read deadline. This is not an end-to-end guarantee: the external MCP client and hosting path have independent limits. |
+| Async settlement worker | `application.asynctasks.settle_due` has a 30-second processing deadline that starts before the claim and provider poll, including admission and settlement; its separate task-claim lease is 60 seconds. It cannot spend 90–120 seconds in admission within that deadline. Expanding it would require coordinating claim ownership and execution headroom. |
+| Hub / other bounded callers | Hub recipe wall deadlines and per-call script limits include earlier execution; browser onboarding aborts after 60 seconds, and Arena applies its own run/attempt deadlines. They can cancel before the admission budget expires. |
+| Rate limiter | `infra.upstream.limiter.DEFAULT_MAX_WAIT_MS` remains 2,000 ms, independent of money admission. |
+| Render / edge / external clients | Their effective request, idle, and cancellation limits are outside this setting. Verify the actual hosting path and caller budget with execution headroom before rollout; accepting 120 in Settings does not certify a 120-second request through them. |
 
 Deploy compatible code first with admission disabled to collect the same eligible-operation
 baseline, then opt in a small Org set. Compare `money_admission_gauge` wait and end-to-end durations,

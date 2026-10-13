@@ -6,8 +6,39 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
+from treg.config import Settings
 from treg.infra import kv, money_admission as admission
+
+
+def test_admission_wait_default_and_lease_are_unchanged(monkeypatch):
+    monkeypatch.delenv("TREG_MONEY_ADMISSION_WAIT_S", raising=False)
+    monkeypatch.delenv("TREG_MONEY_ADMISSION_LEASE_S", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.money_admission_wait_s == 5.0
+    assert settings.money_admission_lease_s == 15.0
+
+
+@pytest.mark.parametrize("wait_s", [0.001, 60, 90, 120])
+def test_admission_wait_accepts_positive_values_through_120(monkeypatch, wait_s):
+    monkeypatch.setenv("TREG_MONEY_ADMISSION_WAIT_S", str(wait_s))
+    settings = Settings(_env_file=None, money_admission_lease_s=15.0)
+    assert settings.money_admission_wait_s == wait_s
+    # The lease starts on acquisition and renews; it need not exceed the queue wait.
+    assert settings.money_admission_lease_s == 15.0
+
+
+@pytest.mark.parametrize("wait_s, error_type", [
+    (-1, "greater_than"), (0, "greater_than"), (121, "less_than_equal"),
+])
+def test_admission_wait_rejects_values_outside_bounds(monkeypatch, wait_s, error_type):
+    monkeypatch.setenv("TREG_MONEY_ADMISSION_WAIT_S", str(wait_s))
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None)
+    [error] = caught.value.errors(include_input=False)
+    assert error["loc"] == ("money_admission_wait_s",)
+    assert error["type"] == error_type
 
 
 class LeaseStore:
