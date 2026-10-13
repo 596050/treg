@@ -12,6 +12,7 @@ type Widget = { opts: any, removed: boolean }
 function page(siteKey: string, { turnstile = true, theme = '', inDialog = false } = {}) {
   const widgets: Widget[] = []
   const hosts: string[] = []
+  const boxes: any[] = []
   const focus: ((e: any) => void)[] = []
   const element = () => {
     const el: any = { attrs: {} as Record<string, string>, style: {}, isConnected: true }
@@ -20,16 +21,18 @@ function page(siteKey: string, { turnstile = true, theme = '', inDialog = false 
     el.remove = () => { el.isConnected = false }
     el.closest = () => null
     el.getBoundingClientRect = () => ({ left: 0, width: 0, bottom: 0, height: 0 })
+    el.children = [] as any[]
+    el.appendChild = (c: any) => { el.children.push(c) }
     return el
   }
   const scripts: any[] = []
-  const dialog = { appendChild: () => hosts.push('dialog') }
+  const dialog = { appendChild: (b: any) => { hosts.push('dialog'); boxes.push(b) } }
   const document = {
     readyState: 'complete',
     createElement: element,
     documentElement: { getAttribute: (k: string) => (k === 'data-theme' ? theme || null : null) },
     head: { appendChild: (s: any) => scripts.push(s) },
-    body: { appendChild: () => hosts.push('body') },
+    body: { appendChild: (b: any) => { hosts.push('body'); boxes.push(b) } },
     addEventListener: (type: string, fn: any) => { if (type === 'focusin') focus.push(fn) },
   }
   const fake = {
@@ -45,7 +48,7 @@ function page(siteKey: string, { turnstile = true, theme = '', inDialog = false 
   field.closest = (sel: string) => (inDialog && sel === 'dialog[open]' ? dialog : null)
   return {
     captcha: window.tregCaptcha as { token: (a: string) => Promise<string>, enabled: boolean },
-    widgets, scripts, hosts, window,
+    widgets, scripts, hosts, boxes, window,
     focusSignIn: () => focus.forEach(fn => fn({ target: field })),
     focusOther: () => { const other = element(); focus.forEach(fn => fn({ target: other })) },
     solve: (i: number, token: string) => widgets[i].opts.callback(token),
@@ -217,5 +220,16 @@ describe('captcha.js', () => {
     plain.focusSignIn()
     await vi.advanceTimersByTimeAsync(0)
     expect(plain.widgets[0].opts.theme).toBe('auto')
+  })
+
+  it('explains the check only when Cloudflare wants a click', async () => {
+    const p = page('key')
+    p.focusSignIn()
+    await vi.advanceTimersByTimeAsync(0)
+    const caption = p.boxes[0].children[0]
+    expect(caption.textContent).toBe('One quick check before we email your code')
+    expect(caption.style.cssText).toContain('display:none')
+    p.widgets[0].opts['before-interactive-callback']()
+    expect(caption.style.display).toBe('block')
   })
 })
