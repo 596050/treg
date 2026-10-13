@@ -3846,7 +3846,8 @@ async def captcha_js(request: Request):
     # ETag turns every page view's revalidation into a 304.
     etag = '"' + hashlib.sha256(body.encode()).hexdigest()[:16] + '"'
     headers = {"Cache-Control": "no-cache", "ETag": etag}
-    if request.headers.get("if-none-match") == etag:
+    # The compression middleware weakens the ETag (W/"..."), and browsers send that form back.
+    if etag in [t.strip().removeprefix("W/") for t in request.headers.get("if-none-match", "").split(",")]:
         return Response(status_code=304, headers=headers)
     return Response(content=body, media_type="application/javascript", headers=headers)
 
