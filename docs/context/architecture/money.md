@@ -136,8 +136,8 @@ amount is `promo_grant_micro` (default 1,000,000); zero skips the claim as well 
 
 Before claiming, `_grant_signup_promo` asks the `signup_credit` decision point
 ([policy extensions](policy-extensions.md)) for a user who could claim. Without an installed
-extension it always grants. A `defer` (also the outcome of a slow or failing extension) skips the
-claim and writes nothing, so the user stays eligible for their next team.
+extension it always grants, and a slow or failing extension also grants (and is reported). A
+`defer` skips the claim and writes nothing, so the user stays eligible for their next team.
 
 Revision `0033` defaults historical users and old writers to ineligible without scanning potentially
 deleted team ledgers. New application User rows explicitly start eligible. Verification never resets

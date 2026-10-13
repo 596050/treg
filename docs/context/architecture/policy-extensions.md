@@ -38,10 +38,18 @@ behavior described everywhere else in these docs.
   build never serves without the policy its operator relies on. Empty, the default, requires
   nothing.
 - **One handler per point.** Registering a second handler for a point is an error.
-- **treg owns failure handling.** Each point fixes its budget and what happens when the handler is
-  slow, raises or returns something outside the point's outcomes. The extension cannot change that.
-  The failure is logged as `event=policy_failed point=<point> error=<exception type>`, never the
-  message, which might name a private rule.
+- **treg owns failure handling, and a failure falls back to the default.** When a handler is slow,
+  raises or returns something outside the point's outcomes, treg uses the point's public default.
+  An extension failure is almost always the operator's own bug or misconfiguration, not something a
+  caller can provoke, so it should cost users nothing beyond what treg without the extension would
+  do. It is reported instead: a log line `event=policy_failed point=<point> error=<exception type>
+  outcome=<default>` and a `PolicyFailed` fault event (component `policy`) for alerting, both with
+  the exception type only, never the message, which might name a private rule. An extension that
+  wants to be strict when its own state is missing decides that itself and answers normally.
+- **Handlers must not block.** The budget cancels a handler at its next `await`; a handler that
+  blocks the event loop is not interrupted.
+- **One registry per process.** `policy.registry` holds the handlers of the most recent
+  `load_extensions`; tests that build several apps restore it themselves.
 - **Refusals do not reveal the rule.** treg logs and shows only the point's public outcome. Which
   rule fired stays with the extension.
 
@@ -49,7 +57,7 @@ behavior described everywhere else in these docs.
 
 | Point           | Called in                                                | Outcomes          | Budget | On timeout, error or bad outcome |
 | --------------- | -------------------------------------------------------- | ----------------- | ------ | -------------------------------- |
-| `signup_credit` | `signup._grant_signup_promo`, before `claim_signup_promo` | `grant`, `defer` | 300 ms | `defer`                          |
+| `signup_credit` | `signup._grant_signup_promo`, before `claim_signup_promo` | `grant`, `defer` | 300 ms | `grant`, reported                |
 
 ### `signup_credit`
 
@@ -65,8 +73,10 @@ a later `grant` is the release path and needs no new ledger entry type. treg log
 `event=signup_credit_deferred org=<id> user=<id>`. After a grant the user is no longer eligible
 and is never asked again.
 
-Failure defers on purpose: a deferred credit costs a real user nothing permanent, while a wrong
-grant is money out.
+A failure grants, as treg without an extension would. The other signup-credit defenses (one
+credit per inbox, the human check, the domain blocklist) keep applying, so a broken extension
+returns the deployment to its public baseline rather than withholding credit from every new user
+until someone notices.
 
 A user who believes their signup credit was withheld in error contacts the deployment's support;
 an operator can grant credit through the ordinary admin grant.

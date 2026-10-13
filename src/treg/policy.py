@@ -12,6 +12,12 @@ startup failure, so a broken build never serves without the policy its operator 
 Extensions can only restrict. Each decision point defines its outcomes and what treg does when the
 extension is slow or fails; the extension cannot change either. A point with no handler runs its
 public default, which is treg's behavior without any extension.
+
+A failing extension is almost always a bug or a misconfiguration on the operator's side, not
+something a caller can trigger, so every point falls back to its public default and reports the
+failure (a log line and a fault event) for the operator to fix. An extension that wants to be
+strict when its own state is missing (a counter store down, say) decides that itself and answers
+normally.
 """
 from __future__ import annotations
 
@@ -22,6 +28,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol
+
+from . import analytics
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -64,20 +72,29 @@ class PolicyRegistry:
         self._signup_credit = handler
 
     async def signup_credit(self, ctx: SignupCreditContext) -> CreditDecision:
-        """Default GRANT. A handler that is slow, raises or answers anything else DEFERs: a deferred
-        credit costs a real user nothing permanent, while a wrong grant is money out."""
+        """Default GRANT, also when the handler is slow, raises or answers anything else.
+
+        The budget cancels a handler at its next await; a handler that blocks the event loop is
+        not interrupted, so handlers must not block.
+        """
         if self._signup_credit is None:
             return CreditDecision.GRANT
         try:
             async with asyncio.timeout(SIGNUP_CREDIT_BUDGET_S):
                 decision = await self._signup_credit(ctx)
-        except Exception as exc:  # noqa: BLE001 - any extension failure takes the safe outcome
-            _log.warning("event=policy_failed point=signup_credit error=%s", type(exc).__name__)
-            return CreditDecision.DEFER
+        except Exception as exc:  # noqa: BLE001 - any extension failure takes the default
+            return _failed("signup_credit", type(exc).__name__, CreditDecision.GRANT)
         if not isinstance(decision, CreditDecision):
-            _log.warning("event=policy_failed point=signup_credit error=bad_outcome")
-            return CreditDecision.DEFER
+            return _failed("signup_credit", "BadOutcome", CreditDecision.GRANT)
         return decision
+
+
+def _failed(point: str, error: str, fallback):
+    """Report an extension failure and return the point's default. Only the exception TYPE is
+    recorded: an extension's message might name one of its private rules."""
+    _log.warning("event=policy_failed point=%s error=%s outcome=%s", point, error, fallback)
+    analytics.capture_fault(component="policy", fault_type="PolicyFailed", value=f"{point} {error}")
+    return fallback
 
 
 class Extension(Protocol):
@@ -86,6 +103,8 @@ class Extension(Protocol):
     def install(self, app: FastAPI, registry: PolicyRegistry) -> None: ...
 
 
+# Process-wide: the handlers of the most recent `load_extensions`. A process serves one app, so
+# one registry; tests that build several apps restore it themselves.
 registry = PolicyRegistry()
 
 
