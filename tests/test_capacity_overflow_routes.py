@@ -280,7 +280,6 @@ _UNRECORDED_SIGNATURE = {
     "harvestapi",  # wallet exhaustion unobserved; no overflow route
     "quickenrich",  # subscription exhaustion not observed; do not spend the trial to force it
     "dropleads",  # free trial was not exhausted; no provider-specific 402 body recorded
-    "prospeo",  # Starter allowance was not exhausted; no provider-specific body was forced
     "aiark",  # funded allowance was not exhausted; no provider-specific body was forced
     "wiza",  # The funded grant was not exhausted; no provider-specific body was forced
     "limadata",  # Starter credits remain; no provider-specific empty-balance body was forced
