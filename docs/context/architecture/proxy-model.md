@@ -54,6 +54,10 @@ related:
 finalization. `application.call.resolve` selects the target and credential;
 `infra.upstream.relay.relay` only injects credentials and forwards bytes.
 
+The shared HTTP ingress can apply default-disabled [Org concurrent-request admission](org-concurrency.md)
+before `execute_call`. Configured orgs share Redis slots across keys and workers; streaming retains
+the root slot through response cleanup. Routing children do not acquire additional root slots.
+
 Named catalog calls with authorization metadata select the provider and grant method before
 comparing hosts. This separates Facebook and Instagram tools sharing `graph.facebook.com`;
 the resulting tool enters the same relay without provider-specific relay logic.

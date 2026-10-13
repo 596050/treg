@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -124,6 +124,53 @@ class Settings(BaseSettings):
     review_budget_per_hour: int = Field(default=5, ge=1)
     # The shared key-value store (Redis protocol). Empty = an in-process fallback; see infra/kv.py.
     kv_url: str = ""
+
+    # Root Web requests only; shared across keys/processes through Redis. Enabling requires
+    # an explicit outage policy. Unlisted and exempt orgs retain their existing behavior.
+    org_concurrency_enabled: bool = False
+    org_concurrency_limits: dict[int, int] = Field(default_factory=dict)
+    org_concurrency_exempt_org_ids: list[int] = Field(default_factory=list)
+    org_concurrency_redis_failure: Literal["fail_open", "fail_closed"] | None = None
+    org_concurrency_lease_s: float = Field(default=30, ge=3, le=300)
+    org_concurrency_retry_after_s: int = Field(default=1, ge=1, le=60)
+
+    @field_validator("org_concurrency_limits", mode="before")
+    @classmethod
+    def _org_concurrency_limits(cls, value):
+        if not isinstance(value, dict) or any(
+            not (type(org) is int and org > 0
+                 or isinstance(org, str) and re.fullmatch(r"[1-9][0-9]*", org))
+            or type(limit) is not int or limit <= 0
+            for org, limit in value.items()
+        ):
+            raise ValueError("org_concurrency_limits must map positive org IDs to positive integer limits")
+        if len({int(org) for org in value}) != len(value):
+            raise ValueError("org_concurrency_limits contains duplicate org IDs")
+        return value
+
+    @field_validator("org_concurrency_exempt_org_ids", mode="before")
+    @classmethod
+    def _org_concurrency_exemptions(cls, value):
+        if not isinstance(value, list) or any(type(org) is not int or org <= 0 for org in value):
+            raise ValueError("org_concurrency_exempt_org_ids must be a list of positive integer org IDs")
+        return value
+
+    @model_validator(mode="after")
+    def _org_concurrency_configuration(self):
+        if self.org_concurrency_enabled:
+            if self.org_concurrency_redis_failure is None:
+                raise ValueError("enabled org concurrency requires an explicit org_concurrency_redis_failure")
+            if not self.kv_url.strip():
+                raise ValueError("enabled org concurrency requires shared Redis via kv_url")
+            try:
+                url = urlsplit(self.kv_url)
+                valid = (url.scheme in {"redis", "rediss"} and bool(url.hostname)
+                         or url.scheme == "unix" and bool(url.path))
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("enabled org concurrency requires a valid Redis kv_url")
+        return self
 
     # Optional same-org admission in front of a balance session (settlement, reserve, release).
     # A lease expiry or an unavailable store still runs the database path. A reserve or release

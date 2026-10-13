@@ -57,6 +57,27 @@ end
 return 0
 """
 
+# One sorted set per org; members are unique request owners, scores are Redis-time deadlines.
+# Expiry recovers abandoned slots, not proof that old work stopped. Never renew an expired owner.
+_SLOT_CLOCK = """
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+"""
+_SLOT_EXTEND = """
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), ARGV[1])
+local last = redis.call('ZRANGE', KEYS[1], -1, -1, 'WITHSCORES')
+redis.call('PEXPIREAT', KEYS[1], math.ceil(tonumber(last[2])))
+return 1
+"""
+_ACQUIRE_SLOT = _SLOT_CLOCK + """
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then return 0 end
+""" + _SLOT_EXTEND
+_RENEW_SLOT = _SLOT_CLOCK + """
+if not redis.call('ZSCORE', KEYS[1], ARGV[1]) then return 0 end
+""" + _SLOT_EXTEND
+_RELEASE_SLOT = "return redis.call('ZREM', KEYS[1], ARGV[1])"
+
 
 class Store(Protocol):
     async def take(self, key: str, limit: int, ttl_s: int) -> bool:
@@ -72,6 +93,12 @@ class Store(Protocol):
                           deadline: float | None = None) -> RenewResult: ...
 
     async def release_lease(self, key: str, token: str) -> ReleaseResult: ...
+
+    async def acquire_slot(self, key: str, token: str, ttl_ms: int, limit: int) -> AcquireResult: ...
+
+    async def renew_slot(self, key: str, token: str, ttl_ms: int) -> RenewResult: ...
+
+    async def release_slot(self, key: str, token: str) -> ReleaseResult: ...
 
     async def aclose(self) -> None: ...
 
@@ -115,6 +142,15 @@ class LocalStore:
     async def aclose(self) -> None:
         self._windows.clear()
 
+    async def acquire_slot(self, key: str, token: str, ttl_ms: int, limit: int) -> AcquireResult:
+        return "unavailable"
+
+    async def renew_slot(self, key: str, token: str, ttl_ms: int) -> RenewResult:
+        return "unavailable"
+
+    async def release_slot(self, key: str, token: str) -> ReleaseResult:
+        return "unavailable"
+
 
 class RedisStore:
     def __init__(self, url: str) -> None:
@@ -136,6 +172,27 @@ class RedisStore:
         except Exception as exc:  # noqa: BLE001 — a store fault is a spent budget, never a call fault
             _note_fault(exc)
             return False
+
+    async def _slot_eval(self, script: str, key: str, *args) -> int | None:
+        try:
+            # No contention wait or retry queue. Ambiguous writes are cleaned by owner token.
+            async with asyncio.timeout(_TIMEOUT_S):
+                return int(await self._client.eval(script, 1, key, *args))
+        except Exception:
+            # No URL, token, request data or exception text in this admission signal.
+            return None
+
+    async def acquire_slot(self, key: str, token: str, ttl_ms: int, limit: int) -> AcquireResult:
+        result = await self._slot_eval(_ACQUIRE_SLOT, key, token, ttl_ms, limit)
+        return "unavailable" if result is None else "acquired" if result else "busy"
+
+    async def renew_slot(self, key: str, token: str, ttl_ms: int) -> RenewResult:
+        result = await self._slot_eval(_RENEW_SLOT, key, token, ttl_ms)
+        return "unavailable" if result is None else "renewed" if result else "lost"
+
+    async def release_slot(self, key: str, token: str) -> ReleaseResult:
+        result = await self._slot_eval(_RELEASE_SLOT, key, token)
+        return "unavailable" if result is None else "released" if result else "not_owned"
 
     async def ping(self) -> bool:
         try:
