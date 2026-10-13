@@ -1167,14 +1167,16 @@ def test_observed_cost_counts_resources_for_billed_oauth_reads():
 
 
 def test_apollo_settles_a_2xx_miss_at_zero():
-    """Apollo answers a no-match with 2xx and charges nothing for it — `organization: null` on
-    enrich, an empty `organizations` page on search. Status-based billing would charge the
-    caller the full credit for a response Apollo gave away; the body is what decides. A body
-    carrying neither documented shape (people enrichment's 1-9 credit range) stays at the
-    estimate — deriving is only safe where the rule is flat."""
+    """Apollo answers a no-match with 2xx and charges nothing for it — `organization: null` or a
+    bare `{}` on enrich (the live unmatched-domain shape), an empty `organizations` page on
+    search. Status-based billing would charge the caller the full credit for a response Apollo
+    gave away; the body is what decides. A people-enrichment body carrying neither organization
+    key stays at the estimate — deriving is only safe where the rule is flat."""
     credit = 26_000  # $0.026/credit (fx.yaml, Basic $65/mo / 2,500 credits)
     assert call_settle._observed_cost_micro(_mk("apollo"), b'{"organization": {"name": "Apple"}}') == credit
     assert call_settle._observed_cost_micro(_mk("apollo"), b'{"organization": null}') == 0, "a 2xx miss is free"
+    enrich = _mk("apollo", endpoint_id="apollo.companies.enrich", cost_type="per_success")
+    assert call_settle._observed_cost_micro(enrich, b'{}') == 0, "live bare {} miss is free via adapter"
     assert call_settle._observed_cost_micro(_mk("apollo"), b'{"organizations": [{"name": "Apple"}], "pagination": {}}') == credit
     assert call_settle._observed_cost_micro(_mk("apollo"), b'{"organizations": [], "pagination": {}}') == 0, "an empty page is free"
     assert call_settle._observed_cost_micro(_mk("apollo"), b'{"person": {"id": "x"}}') is None, "1-9 credit range: estimate, not a guess"
