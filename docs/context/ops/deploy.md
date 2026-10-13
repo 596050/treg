@@ -370,6 +370,11 @@ process logs `event=client_ip_sources` once with the address headers its proxies
 and counts only), and `event=client_ip_header_missing` when the configured header does not arrive.
 See [multi-tenancy](../architecture/multi-tenancy.md), "Client address".
 
+A deployment that installs a policy extension into the server environment (an extra `pip install`
+after the build) should set `TREG_REQUIRED_EXTENSIONS` to its entry-point name, so a build that
+lost it fails to start instead of serving without it. See
+[policy extensions](../architecture/policy-extensions.md).
+
 [`deploy/render.example.yaml`](../../../deploy/render.example.yaml) is a generic self-hosting example.
 It creates one web service and one PostgreSQL database, builds with
 `bash scripts/build-web.sh` (frontend build followed by the locked Python install), runs
